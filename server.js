@@ -1068,8 +1068,8 @@ function setupAiAutoResponder(sessionId, sock) {
         if (!chatStore[phone]) {
           chatStore[phone] = {
             phone,
-            remoteJid,
-            name: '',
+            remoteJid: `${phone}@s.whatsapp.net`,
+            name: contactsMap[phone] || '',
             lastMessage: incomingText.trim(),
             lastMessageFrom: 'me',
             lastMessageTimestamp: msgTimestamp,
@@ -1078,6 +1078,10 @@ function setupAiAutoResponder(sessionId, sock) {
             manualMode: isManualFromPhone,
             history: []
           };
+        }
+        chatStore[phone].remoteJid = `${phone}@s.whatsapp.net`;
+        if (remoteJid.endsWith('@lid')) {
+          chatStore[phone].lid = remoteJid;
         }
         if (isManualFromPhone) {
           chatStore[phone].manualMode = true;
@@ -1088,7 +1092,7 @@ function setupAiAutoResponder(sessionId, sock) {
         chatStore[phone].replied = true;
         chatStore[phone].history = chatStore[phone].history || [];
         chatStore[phone].history.push({ role: 'model', parts: [{ text: incomingText.trim() }] });
-        if (chatStore[phone].history.length > 16) chatStore[phone].history = chatStore[phone].history.slice(-16);
+        if (chatStore[phone].history.length > 50) chatStore[phone].history = chatStore[phone].history.slice(-50);
         saveChatStore(phone);
         broadcastCopilotEvent('outgoing_message', { phone, text: incomingText.trim() });
         continue;
@@ -1118,7 +1122,7 @@ function setupAiAutoResponder(sessionId, sock) {
         chatStore[phone] = {
           phone,
           remoteJid: `${phone}@s.whatsapp.net`,
-          name: msg.pushName || '',
+          name: msg.pushName || contactsMap[phone] || '',
           lastMessage: incomingText.trim(),
           lastMessageFrom: 'contact',
           lastMessageTimestamp: msgTimestamp,
@@ -1138,7 +1142,7 @@ function setupAiAutoResponder(sessionId, sock) {
       chatStore[phone].replied = false;
       chatStore[phone].history = chatStore[phone].history || [];
       chatStore[phone].history.push({ role: 'user', parts: [{ text: incomingText.trim() }] });
-      if (chatStore[phone].history.length > 16) chatStore[phone].history = chatStore[phone].history.slice(-16);
+      if (chatStore[phone].history.length > 50) chatStore[phone].history = chatStore[phone].history.slice(-50);
       saveChatStore(phone);
       broadcastCopilotEvent('incoming_message', { phone, text: incomingText.trim() });
 
@@ -1184,6 +1188,55 @@ function setupAiAutoResponder(sessionId, sock) {
       if (mappedContacts > 0) {
         saveLidMap();
         console.log(`[History Sync] 🔗 Mapped ${mappedContacts} contacts LID -> Phone from history.`);
+      }
+    }
+
+    // 2. استيراد ومزامنة كافة الدردشات النشطة على الهاتف فوراً
+    if (chats && Array.isArray(chats)) {
+      let importedChats = 0;
+      for (const chat of chats) {
+        if (!chat.id || chat.id === 'status@broadcast' || chat.id.endsWith('@g.us') || chat.id.endsWith('@newsletter')) continue;
+        let phone = null;
+        if (chat.id.endsWith('@s.whatsapp.net')) {
+          phone = chat.id.split('@')[0].replace(/[^0-9]/g, '');
+        } else if (chat.id.endsWith('@lid')) {
+          const cleanLid = chat.id.split('@')[0].replace(/[^0-9]/g, '');
+          phone = lidToPhoneMap[cleanLid] || resolveLidFromChatStore(cleanLid);
+        }
+        if (!phone) continue;
+        if (phone.length < 9 || phone.length > 13) continue;
+
+        const convTime = chat.conversationTimestamp 
+          ? (typeof chat.conversationTimestamp === 'number' ? chat.conversationTimestamp * 1000 : (chat.conversationTimestamp.low ? chat.conversationTimestamp.low * 1000 : Date.now()))
+          : Date.now();
+
+        if (!chatStore[phone]) {
+          chatStore[phone] = {
+            phone,
+            remoteJid: `${phone}@s.whatsapp.net`,
+            name: chat.name || contactsMap[phone] || '',
+            lastMessage: '',
+            lastMessageFrom: 'contact',
+            lastMessageTimestamp: convTime,
+            replied: chat.unreadCount === 0,
+            replyCount: 0,
+            manualMode: false,
+            history: []
+          };
+          importedChats++;
+        } else {
+          if (chat.name && !chatStore[phone].name) chatStore[phone].name = chat.name;
+          if (convTime > (chatStore[phone].lastMessageTimestamp || 0)) {
+            chatStore[phone].lastMessageTimestamp = convTime;
+          }
+        }
+        if (chat.id.endsWith('@lid')) {
+          chatStore[phone].lid = chat.id;
+        }
+      }
+      if (importedChats > 0) {
+        saveChatStore();
+        console.log(`[History Sync] 📱 Imported ${importedChats} active phone chats into dashboard!`);
       }
     }
 
@@ -1237,7 +1290,7 @@ function setupAiAutoResponder(sessionId, sock) {
             chatStore[phone] = {
               phone,
               remoteJid: `${phone}@s.whatsapp.net`,
-              name: '',
+              name: contactsMap[phone] || '',
               lastMessage: incomingText.trim(),
               lastMessageFrom: 'me',
               lastMessageTimestamp: msgTimestamp,
@@ -1260,7 +1313,7 @@ function setupAiAutoResponder(sessionId, sock) {
             chatStore[phone] = {
               phone,
               remoteJid: `${phone}@s.whatsapp.net`,
-              name: msg.pushName || '',
+              name: msg.pushName || contactsMap[phone] || '',
               lastMessage: incomingText.trim(),
               lastMessageFrom: 'contact',
               lastMessageTimestamp: msgTimestamp,
@@ -1287,7 +1340,7 @@ function setupAiAutoResponder(sessionId, sock) {
               id: msg.key?.id || `${phone}_${msgTimestamp}`,
               phone,
               remoteJid: chatStore[phone].remoteJid || `${phone}@s.whatsapp.net`,
-              senderName: msg.pushName || '',
+              senderName: msg.pushName || contactsMap[phone] || '',
               messageType: 'text',
               incomingText: incomingText.trim(),
               receivedAt: msgTimestamp
@@ -1310,8 +1363,8 @@ function setupAiAutoResponder(sessionId, sock) {
             timestamp: msgTimestamp
           });
           chatStore[phone].history.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-          if (chatStore[phone].history.length > 30) {
-            chatStore[phone].history = chatStore[phone].history.slice(-30);
+          if (chatStore[phone].history.length > 50) {
+            chatStore[phone].history = chatStore[phone].history.slice(-50);
           }
           updatedPhones.add(phone);
         }
@@ -1354,6 +1407,81 @@ function setupAiAutoResponder(sessionId, sock) {
         saveLidMap();
         console.log(`[chats.phoneNumberShare] 🔗 Linked LID ${cleanLid} -> Phone +${cleanPhone}`);
       }
+    }
+  });
+
+  // 5. الاستماع لإنشاء محادثات جديدة على الهاتف فوراً
+  sock.ev.on('chats.upsert', (newChats) => {
+    let count = 0;
+    for (const chat of newChats) {
+      if (!chat.id || chat.id.endsWith('@g.us') || chat.id.endsWith('@newsletter') || chat.id === 'status@broadcast') continue;
+      let phone = null;
+      if (chat.id.endsWith('@s.whatsapp.net')) {
+        phone = chat.id.split('@')[0].replace(/[^0-9]/g, '');
+      } else if (chat.id.endsWith('@lid')) {
+        const cleanLid = chat.id.split('@')[0].replace(/[^0-9]/g, '');
+        phone = lidToPhoneMap[cleanLid] || resolveLidFromChatStore(cleanLid);
+      }
+      if (!phone || phone.length < 9 || phone.length > 13) continue;
+
+      const convTime = chat.conversationTimestamp 
+        ? (typeof chat.conversationTimestamp === 'number' ? chat.conversationTimestamp * 1000 : (chat.conversationTimestamp.low ? chat.conversationTimestamp.low * 1000 : Date.now())) 
+        : Date.now();
+
+      if (!chatStore[phone]) {
+        chatStore[phone] = {
+          phone,
+          remoteJid: `${phone}@s.whatsapp.net`,
+          name: chat.name || contactsMap[phone] || '',
+          lastMessage: '',
+          lastMessageFrom: 'contact',
+          lastMessageTimestamp: convTime,
+          replied: true,
+          replyCount: 0,
+          manualMode: false,
+          history: []
+        };
+        count++;
+      }
+      if (chat.id.endsWith('@lid')) {
+        chatStore[phone].lid = chat.id;
+      }
+    }
+    if (count > 0) {
+      saveChatStore();
+      console.log(`[chats.upsert] 💬 Captured ${count} new chats from phone`);
+    }
+  });
+
+  // 6. الاستماع لتحديثات المحادثات (القراءة، التوقيت، الحذف)
+  sock.ev.on('chats.update', (chatUpdates) => {
+    let updatedAny = false;
+    for (const u of chatUpdates) {
+      if (!u.id) continue;
+      let phone = u.id.split('@')[0].replace(/[^0-9]/g, '');
+      if (u.id.endsWith('@lid')) {
+        phone = lidToPhoneMap[phone] || resolveLidFromChatStore(phone);
+      }
+      if (!phone || !chatStore[phone]) continue;
+
+      if (u.unreadCount !== undefined) {
+        if (u.unreadCount === 0) {
+          chatStore[phone].replied = true;
+          updatedAny = true;
+        }
+      }
+      if (u.conversationTimestamp) {
+        const ts = typeof u.conversationTimestamp === 'number' 
+          ? u.conversationTimestamp * 1000 
+          : (u.conversationTimestamp.low ? u.conversationTimestamp.low * 1000 : Date.now());
+        if (ts > (chatStore[phone].lastMessageTimestamp || 0)) {
+          chatStore[phone].lastMessageTimestamp = ts;
+          updatedAny = true;
+        }
+      }
+    }
+    if (updatedAny) {
+      saveChatStore();
     }
   });
 }
@@ -2322,10 +2450,10 @@ function isRealPhoneNumber(phone, c) {
   const hasValidPrefix = validPrefixes.some(p => clean.startsWith(p));
   const isLocalYemen = clean.length === 9 && clean.startsWith('7');
   if (!hasValidPrefix && !isLocalYemen) return false;
-  if (clean.length < 9 || clean.length > 12) return false;
+  if (clean.length < 9 || clean.length > 13) return false;
 
   const jid = c?.remoteJid || '';
-  if (jid.endsWith('@lid') || jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return false;
+  if (jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return false;
   return true;
 }
 
@@ -2552,6 +2680,47 @@ app.post('/api/copilot/open-chat', async (req, res) => {
       }
     });
   } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// المزامنة اللحظية المباشرة لمحادثة مع هاتف الواتساب
+app.post('/api/copilot/chat/:phone/sync', async (req, res) => {
+  try {
+    const clean = String(req.params.phone).replace(/[^0-9]/g, '');
+    const sock = sessions['admin_instance_1'];
+    if (!sock || sessionStatus['admin_instance_1'] !== 'connected') {
+      return res.status(503).json({ error: 'WhatsApp socket not connected' });
+    }
+
+    const jid = `${clean}@s.whatsapp.net`;
+    // فحص الرقم على واتساب وتحديث الـ LID والاسم
+    const [result] = await sock.onWhatsApp(jid).catch(() => []);
+    if (result?.lid) {
+      const cleanLid = result.lid.split('@')[0].replace(/[^0-9]/g, '');
+      lidToPhoneMap[cleanLid] = clean;
+      saveLidMap();
+      if (chatStore[clean]) {
+        chatStore[clean].lid = result.lid;
+      }
+    }
+
+    if (contactsMap[clean] && chatStore[clean] && !chatStore[clean].name) {
+      chatStore[clean].name = contactsMap[clean];
+    }
+
+    if (chatStore[clean]) {
+      saveChatStore(clean);
+    }
+
+    res.json({
+      success: true,
+      phone: clean,
+      exists: !!result?.exists,
+      lid: result?.lid || null,
+      chat: chatStore[clean] || null
+    });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });

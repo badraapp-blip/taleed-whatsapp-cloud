@@ -819,6 +819,9 @@
           </div>
         </div>
         <div class="chat-actions">
+          <button class="btn-sync-chat" onclick="syncCurrentChatFromPhone()" style="background:#1e293b; color:#38bdf8; border:1px solid #0284c7; padding:6px 12px; border-radius:8px; cursor:pointer; font-family:Cairo; font-size:12px; font-weight:bold;" title="مزامنة وتحديث حالة هذا الرقم مباشرة من هاتف الواتساب">
+            🔄 تحديث من الهاتف
+          </button>
           <button class="btn-success-outline" onclick="promptRecordClientMessage()" style="background:#065f46; color:#34d399; border:1px solid #059669; padding:6px 12px; border-radius:8px; cursor:pointer; font-family:Cairo; font-size:12px; font-weight:bold;" title="تسجيل رسالة وردتك من الزبون في واتساب لتوليد رد ذكي فوري عليها">
             📥 تسجيل رد الزبون
           </button>
@@ -1577,6 +1580,27 @@
           fetchChats();
         }
       } catch(e){ alert('خطأ: ' + e.message); }
+    }
+
+    async function syncCurrentChatFromPhone() {
+      if (!activePhone) {
+        alert('يرجى اختيار محادثة أولاً لمزامنتها مع الهاتف');
+        return;
+      }
+      showNotificationToast('🔄 جاري الاتصال بالواتساب ومزامنة حالة الرقم...');
+      try {
+        const res = await fetch(`/api/copilot/chat/${activePhone}/sync`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showNotificationToast('✅ تمت مزامنة المحادثة مع هاتف الواتساب بنجاح!');
+          await fetchChats(true);
+          await loadActiveChat(activePhone, true);
+        } else {
+          alert('تعذرت المزامنة: ' + (data.error || 'خطأ غير معروف'));
+        }
+      } catch(e) {
+        alert('خطأ في المزامنة: ' + e.message);
+      }
     }
 
     async function promptRecordClientMessage() {
