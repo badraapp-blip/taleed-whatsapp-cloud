@@ -1,5 +1,5 @@
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, DisconnectReason, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, DisconnectReason, Browsers, fetchLatestBaileysVersion, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode');
 const path = require('path');
@@ -142,13 +142,42 @@ let chatStore = loadChatStore();
 async function syncChatToCloud(phone) {
   if (!phone || !chatStore[phone]) return;
   try {
-    const serialized = JSON.stringify(chatStore[phone]).replace(/'/g, "''");
+    const c = chatStore[phone];
+    const serialized = JSON.stringify(c).replace(/'/g, "''");
+    const cleanLastMsg = (c.lastMessage || '').replace(/'/g, "''");
+    const jid = c.remoteJid || `${phone}@s.whatsapp.net`;
+    const draftSerialized = c.pendingDraft ? `'${JSON.stringify(c.pendingDraft).replace(/'/g, "''")}'::jsonb` : 'NULL';
+    const histSerialized = c.history && c.history.length > 0 ? `'${JSON.stringify(c.history).replace(/'/g, "''")}'::jsonb` : "'[]'::jsonb";
+
     await supabaseQuery(`
-      INSERT INTO workflow_taleed.chat_store (phone, data, updated_at)
-      VALUES ('${phone}', '${serialized}'::jsonb, now())
-      ON CONFLICT (phone) DO UPDATE SET data = EXCLUDED.data, updated_at = now();
+      INSERT INTO workflow_taleed.chat_store (
+        phone, remote_jid, name, last_message, last_message_from, 
+        last_message_timestamp, replied, reply_count, manual_mode, 
+        pending_draft, history, dismissed_at, data, updated_at
+      )
+      VALUES (
+        '${phone}', '${jid}', '${(c.name || '').replace(/'/g, "''")}', '${cleanLastMsg}', '${c.lastMessageFrom || 'contact'}',
+        ${c.lastMessageTimestamp || Date.now()}, ${!!c.replied}, ${c.replyCount || 0}, ${!!c.manualMode},
+        ${draftSerialized}, ${histSerialized}, ${c.dismissedAt || 'NULL'}, '${serialized}'::jsonb, now()
+      )
+      ON CONFLICT (phone) DO UPDATE SET 
+        remote_jid = EXCLUDED.remote_jid,
+        name = EXCLUDED.name,
+        last_message = EXCLUDED.last_message,
+        last_message_from = EXCLUDED.last_message_from,
+        last_message_timestamp = EXCLUDED.last_message_timestamp,
+        replied = EXCLUDED.replied,
+        reply_count = EXCLUDED.reply_count,
+        manual_mode = EXCLUDED.manual_mode,
+        pending_draft = EXCLUDED.pending_draft,
+        history = EXCLUDED.history,
+        dismissed_at = EXCLUDED.dismissed_at,
+        data = EXCLUDED.data,
+        updated_at = now();
     `);
-  } catch (e) {}
+  } catch (e) {
+    console.error(`[ChatStore] Cloud sync error for ${phone}:`, e.message);
+  }
 }
 
 function saveChatStore(phone) {
@@ -212,7 +241,7 @@ async function initCloudState() {
     const res = await supabaseQuery('SELECT phone, data FROM workflow_taleed.chat_store;');
     if (res && Array.isArray(res) && res.length > 0) {
       for (const row of res) {
-        chatStore[row.phone] = row.data;
+        if (row.data) chatStore[row.phone] = row.data;
       }
       console.log(`[SupabaseStore] ☁️ Synced ${res.length} chats from Supabase cloud!`);
     }
@@ -223,6 +252,14 @@ async function initCloudState() {
     if (mem && Array.isArray(mem) && mem.length > 0) {
       aiLearningMemory = mem.map(m => m.memory_data);
       console.log(`[SupabaseStore] 🧠 Synced ${aiLearningMemory.length} learning rules from Supabase cloud!`);
+    }
+  } catch (e) {}
+
+  try {
+    const modeRes = await supabaseQuery("SELECT value FROM workflow_taleed.system_settings WHERE key = 'system_mode';");
+    if (modeRes && Array.isArray(modeRes) && modeRes[0]?.value) {
+      SYSTEM_MODE = typeof modeRes[0].value === 'string' ? modeRes[0].value : JSON.parse(JSON.stringify(modeRes[0].value));
+      console.log(`[SupabaseStore] ⚙️ Loaded persistent SYSTEM_MODE: [${SYSTEM_MODE}]`);
     }
   } catch (e) {}
 }
@@ -594,9 +631,155 @@ function extractMessageText(message) {
   if (m.buttonsResponseMessage?.selectedButtonId) return m.buttonsResponseMessage.selectedButtonId;
   if (m.listResponseMessage?.singleSelectReply?.selectedRowId) return m.listResponseMessage.singleSelectReply.selectedRowId;
   if (m.templateButtonReplyMessage?.selectedId) return m.templateButtonReplyMessage.selectedId;
+  if (m.audioMessage) return '[تسجيل صوتي من العميل]';
 
   return '';
 }
+
+// ==============================================================================
+// تفريغ وفهم التسجيلات الصوتية باللهجة الحضرمية واليمنية (Multimodal Voice AI)
+// ==============================================================================
+async function transcribeAudioWithGemini(audioBuffer, mimeType = 'audio/ogg') {
+  if (!GEMINI_API_KEY || !audioBuffer) return null;
+  return new Promise((resolve) => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const payload = JSON.stringify({
+      contents: [{
+        parts: [
+          {
+            inlineData: {
+              mimeType: (mimeType || 'audio/ogg').split(';')[0],
+              data: audioBuffer.toString('base64')
+            }
+          },
+          {
+            text: "أنت خبير باللهجة اليمنية الحضرمية في مدينة سيئون. استمع لهذا التسجيل الصوتي بدقة وفرغ نصه بالعربية ولخص ما يطلبه العميل بدون أي مقدمات أو شرح إضافي."
+          }
+        ]
+      }],
+      generationConfig: { temperature: 0.2, maxOutputTokens: 150 }
+    });
+
+    const req = https.request(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) },
+      timeout: 15000
+    }, res => {
+      let body = '';
+      res.on('data', c => body += c);
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+          resolve(text || null);
+        } catch (e) {
+          resolve(null);
+        }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.on('timeout', () => { req.destroy(); resolve(null); });
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ==============================================================================
+// طابور الرسائل السحابي الدائم لضمان عدم ضياع أي عميل (Durable Cloud Inbound Queue)
+// ==============================================================================
+async function enqueueInboundMessage({ id, phone, remoteJid, senderName, messageType = 'text', incomingText, mediaUrl = null, receivedAt = Date.now() }) {
+  if (!id || !phone || !incomingText) return;
+  try {
+    const sanitizedText = incomingText.replace(/'/g, "''");
+    const sanitizedName = (senderName || '').replace(/'/g, "''");
+    const receivedIso = new Date(receivedAt).toISOString();
+    
+    await supabaseQuery(`
+      INSERT INTO workflow_taleed.inbound_message_queue (
+        id, phone, remote_jid, sender_name, message_type, incoming_text, media_url, received_at, status
+      )
+      VALUES (
+        '${id}', '${phone}', '${remoteJid}', '${sanitizedName}', '${messageType}', '${sanitizedText}', ${mediaUrl ? `'${mediaUrl}'` : 'NULL'}, '${receivedIso}', 'pending'
+      )
+      ON CONFLICT (id) DO NOTHING;
+    `);
+    console.log(`[Durable Queue] 📥 Queued message [${id}] from +${phone} to Supabase Cloud!`);
+  } catch (err) {
+    console.error(`[Durable Queue] Error enqueuing message for +${phone}:`, err.message);
+  }
+}
+
+let isQueueWorkerBusy = false;
+async function processInboundMessageQueue() {
+  if (isQueueWorkerBusy) return;
+  const sock = sessions['admin_instance_1'];
+  if (!sock || sessionStatus['admin_instance_1'] !== 'connected') return;
+
+  isQueueWorkerBusy = true;
+  try {
+    // جلب أقدم الرسائل المعلقة من سحابة Supabase لمعالجتها فورياً
+    const pendingItems = await supabaseQuery(`
+      SELECT id, phone, remote_jid, sender_name, incoming_text, received_at, retry_count
+      FROM workflow_taleed.inbound_message_queue
+      WHERE status = 'pending'
+      ORDER BY received_at ASC
+      LIMIT 3;
+    `);
+
+    if (pendingItems && Array.isArray(pendingItems) && pendingItems.length > 0) {
+      for (const item of pendingItems) {
+        const phone = item.phone;
+        const jid = item.remote_jid || `${phone}@s.whatsapp.net`;
+        const text = item.incoming_text;
+        const msgId = item.id;
+
+        // إذا كان الرقم تحت الإشراف اليدوي المباشر
+        if (chatStore[phone]?.manualMode) {
+          await supabaseQuery(`UPDATE workflow_taleed.inbound_message_queue SET status = 'manual_ignored', updated_at = now() WHERE id = '${msgId}';`);
+          continue;
+        }
+
+        // فحص هل رد عليه النظام أو المشرف مسبقاً
+        const c = chatStore[phone];
+        const itemTime = new Date(item.received_at).getTime();
+        if (c && c.lastMessageFrom === 'me' && c.replied && (c.lastMessageTimestamp || 0) > itemTime) {
+          await supabaseQuery(`UPDATE workflow_taleed.inbound_message_queue SET status = 'replied', updated_at = now() WHERE id = '${msgId}';`);
+          continue;
+        }
+
+        // إذا كانت هناك مسودة جاهزة بانتظار الاعتماد
+        if (SYSTEM_MODE === 'copilot' && c?.pendingDraft) {
+          const draftEscaped = (c.pendingDraft.text || '').replace(/'/g, "''");
+          await supabaseQuery(`UPDATE workflow_taleed.inbound_message_queue SET status = 'drafted', ai_draft = '${draftEscaped}', updated_at = now() WHERE id = '${msgId}';`);
+          continue;
+        }
+
+        // إطلاق المعالجة وتوليد الرد
+        console.log(`[Durable Queue Worker] ⚙️ Processing message [${msgId}] for +${phone}: "${text}"...`);
+        await handleAiReply('admin_instance_1', jid, phone, text);
+
+        // تحديث السجل في السحابة
+        const updated = chatStore[phone];
+        if (updated?.pendingDraft) {
+          const draftEscaped = updated.pendingDraft.text.replace(/'/g, "''");
+          await supabaseQuery(`UPDATE workflow_taleed.inbound_message_queue SET status = 'drafted', ai_draft = '${draftEscaped}', updated_at = now() WHERE id = '${msgId}';`);
+        } else if (updated?.replied && updated?.lastMessageFrom === 'me') {
+          const replyEscaped = (updated.lastMessage || '').replace(/'/g, "''");
+          await supabaseQuery(`UPDATE workflow_taleed.inbound_message_queue SET status = 'replied', reply_text = '${replyEscaped}', replied_at = now(), updated_at = now() WHERE id = '${msgId}';`);
+        } else {
+          await supabaseQuery(`UPDATE workflow_taleed.inbound_message_queue SET retry_count = retry_count + 1, updated_at = now() WHERE id = '${msgId}';`);
+        }
+
+        await sleepMs(3000);
+      }
+    }
+  } catch (err) {
+    console.error('[Durable Queue Worker] Error:', err.message);
+  } finally {
+    isQueueWorkerBusy = false;
+  }
+}
+setInterval(processInboundMessageQueue, 25000); // فحص دوري كل 25 ثانية للطابور السحابي
 
 async function handleAiReply(sessionId, remoteJid, phone, incomingText) {
   if (isContactBusy[phone]) return;
@@ -676,7 +859,15 @@ async function handleAiReply(sessionId, remoteJid, phone, incomingText) {
       };
       chatStore[phone].status = 'pending_approval';
       chatStore[phone].replied = false;
-      saveChatStore();
+      saveChatStore(phone);
+      
+      // تحديث الطابور السحابي
+      supabaseQuery(`
+        UPDATE workflow_taleed.inbound_message_queue 
+        SET status = 'drafted', ai_draft = '${aiResponseText.replace(/'/g, "''")}', updated_at = now()
+        WHERE phone = '${phone}' AND status = 'pending';
+      `).catch(() => {});
+
       broadcastCopilotEvent('draft_ready', { phone, draft: aiResponseText });
       try { if (sock) await sock.sendPresenceUpdate('paused', remoteJid); } catch(e){}
       console.log(`[Copilot Mode] 💡 تم توليد المسودة لرقم +${phone}: "${aiResponseText}". بانتظار موافقتك أو تعديلك من لوحة التحكم.`);
@@ -698,7 +889,15 @@ async function handleAiReply(sessionId, remoteJid, phone, incomingText) {
     chatStore[phone].lastMessageTimestamp = Date.now();
     hist.push({ role: 'model', parts: [{ text: aiResponseText }] });
     chatStore[phone].history = hist.slice(-16);
-    saveChatStore();
+    delete chatStore[phone].pendingDraft;
+    saveChatStore(phone);
+
+    // تحديث الطابور السحابي
+    supabaseQuery(`
+      UPDATE workflow_taleed.inbound_message_queue 
+      SET status = 'replied', reply_text = '${aiResponseText.replace(/'/g, "''")}', replied_at = now(), updated_at = now()
+      WHERE phone = '${phone}' AND status IN ('pending', 'drafted');
+    `).catch(() => {});
 
     // 7. توثيق في سجل المحادثات
     const logItem = {
@@ -734,14 +933,34 @@ function setupAiAutoResponder(sessionId, sock) {
       if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) continue;
       if (!remoteJid.endsWith('@s.whatsapp.net') && !remoteJid.endsWith('@lid')) continue;
 
-      const incomingText = extractMessageText(msg.message);
-      if (!incomingText || !incomingText.trim()) continue;
-
       let phone = remoteJid.split('@')[0];
       if (remoteJid.endsWith('@lid')) {
         const found = Object.keys(chatStore).find(k => chatStore[k].remoteJid === remoteJid);
         if (found) phone = found;
       }
+
+      const msgTimestamp = typeof msg.messageTimestamp === 'number'
+        ? msg.messageTimestamp * 1000
+        : (msg.messageTimestamp?.low ? msg.messageTimestamp.low * 1000 : Date.now());
+
+      let incomingText = extractMessageText(msg.message);
+
+      // تفريغ التسجيلات الصوتية عبر Gemini إن وُجدت
+      if (msg.message?.audioMessage) {
+        try {
+          console.log(`[Voice Note] 🎙️ Contact +${phone} sent an audio message. Downloading and transcribing with Gemini...`);
+          const buffer = await downloadMediaMessage(msg, 'buffer', {});
+          const transcribed = await transcribeAudioWithGemini(buffer, msg.message.audioMessage.mimetype || 'audio/ogg');
+          if (transcribed) {
+            incomingText = `[تسجيل صوتي مفرغ]: "${transcribed}"`;
+            console.log(`[Voice Note Transcribed] +${phone}: ${incomingText}`);
+          }
+        } catch (audioErr) {
+          console.warn(`[Voice Note] Could not transcribe audio for +${phone}:`, audioErr.message);
+        }
+      }
+
+      if (!incomingText || !incomingText.trim()) continue;
 
       const isFromMe = !!msg.key.fromMe;
       console.log(`[Message Upsert] [${type}] [${isFromMe ? 'Me -> +' + phone : '+' + phone + ' -> Me'}]: "${incomingText}"`);
@@ -749,9 +968,12 @@ function setupAiAutoResponder(sessionId, sock) {
       // إذا كانت الرسالة مني أنا (المرسل)
       if (isFromMe) {
         const isSystemMsg = systemSentMsgIds.has(msg.key.id);
-        const isManualFromPhone = !isSystemMsg;
+        // لا نعتبر الرسالة يدوية من الهاتف إلا إذا كانت واردة كإشعار لحظي جديد خلال آخر 30 ثانية ولم يرسلها النظام
+        const isFreshRealtime = type === 'notify' && (Math.abs(Date.now() - msgTimestamp) < 30000);
+        const isManualFromPhone = !isSystemMsg && isFreshRealtime;
+
         if (isManualFromPhone) {
-          console.log(`[Manual Protection] 👤 المستخدم كتب يدوياً للرقم +${phone} من هاتفه! تم تثبيت manualMode=true ومنع الذكاء الاصطناعي نهائياً عن هذا الرقم.`);
+          console.log(`[Manual Protection] 👤 المستخدم كتب يدوياً للرقم +${phone} من هاتفه الآن! تم تثبيت manualMode=true.`);
         }
 
         if (!chatStore[phone]) {
@@ -761,7 +983,7 @@ function setupAiAutoResponder(sessionId, sock) {
             name: '',
             lastMessage: incomingText.trim(),
             lastMessageFrom: 'me',
-            lastMessageTimestamp: Date.now(),
+            lastMessageTimestamp: msgTimestamp,
             replied: true,
             replyCount: 0,
             manualMode: isManualFromPhone,
@@ -773,12 +995,12 @@ function setupAiAutoResponder(sessionId, sock) {
         }
         chatStore[phone].lastMessage = incomingText.trim();
         chatStore[phone].lastMessageFrom = 'me';
-        chatStore[phone].lastMessageTimestamp = Date.now();
+        chatStore[phone].lastMessageTimestamp = msgTimestamp;
         chatStore[phone].replied = true;
         chatStore[phone].history = chatStore[phone].history || [];
         chatStore[phone].history.push({ role: 'model', parts: [{ text: incomingText.trim() }] });
         if (chatStore[phone].history.length > 16) chatStore[phone].history = chatStore[phone].history.slice(-16);
-        saveChatStore();
+        saveChatStore(phone);
         broadcastCopilotEvent('outgoing_message', { phone, text: incomingText.trim() });
         continue;
       }
@@ -791,15 +1013,26 @@ function setupAiAutoResponder(sessionId, sock) {
         processedMsgIds.delete(firstKey);
       }
 
+      // تسجيل الرسالة فوراً في طابور السحابة الدائم لضمان عدم ضياعها تحت أي ظرف
+      enqueueInboundMessage({
+        id: msg.key.id,
+        phone,
+        remoteJid,
+        senderName: msg.pushName || '',
+        messageType: msg.message?.audioMessage ? 'audio' : 'text',
+        incomingText: incomingText.trim(),
+        receivedAt: msgTimestamp
+      });
+
       // تحديث حالة العميل في مخزن المحادثات الدائم
       if (!chatStore[phone]) {
         chatStore[phone] = {
           phone,
           remoteJid,
-          name: '',
+          name: msg.pushName || '',
           lastMessage: incomingText.trim(),
           lastMessageFrom: 'contact',
-          lastMessageTimestamp: Date.now(),
+          lastMessageTimestamp: msgTimestamp,
           replied: false,
           replyCount: 0,
           manualMode: false,
@@ -809,12 +1042,12 @@ function setupAiAutoResponder(sessionId, sock) {
       chatStore[phone].remoteJid = remoteJid;
       chatStore[phone].lastMessage = incomingText.trim();
       chatStore[phone].lastMessageFrom = 'contact';
-      chatStore[phone].lastMessageTimestamp = Date.now();
+      chatStore[phone].lastMessageTimestamp = msgTimestamp;
       chatStore[phone].replied = false;
       chatStore[phone].history = chatStore[phone].history || [];
       chatStore[phone].history.push({ role: 'user', parts: [{ text: incomingText.trim() }] });
       if (chatStore[phone].history.length > 16) chatStore[phone].history = chatStore[phone].history.slice(-16);
-      saveChatStore();
+      saveChatStore(phone);
       broadcastCopilotEvent('incoming_message', { phone, text: incomingText.trim() });
 
       // فحص الحماية اليدوية (إذا رد المستخدم بنفسه يدوياً على هذا الرقم)
@@ -828,7 +1061,7 @@ function setupAiAutoResponder(sessionId, sock) {
       if (currentCount >= MAX_AI_REPLIES_PER_CONTACT) {
         console.log(`[AI Auto-Responder] Contact +${phone} reached reply cap (${currentCount}/${MAX_AI_REPLIES_PER_CONTACT}). No more AI spam.`);
         chatStore[phone].replied = true;
-        saveChatStore();
+        saveChatStore(phone);
         continue;
       }
 
@@ -859,25 +1092,64 @@ function setupAiAutoResponder(sessionId, sock) {
           ? msg.messageTimestamp * 1000
           : (msg.messageTimestamp?.low ? msg.messageTimestamp.low * 1000 : Date.now());
 
-        if (!chatStore[phone]) {
-          chatStore[phone] = {
-            phone,
-            remoteJid,
-            name: '',
-            lastMessage: incomingText.trim(),
-            lastMessageFrom: isFromMe ? 'me' : 'contact',
-            lastMessageTimestamp: msgTimestamp,
-            replied: isFromMe,
-            replyCount: 0,
-            history: []
-          };
-          updatedAny = true;
-        } else if (!chatStore[phone].lastMessageTimestamp || msgTimestamp >= chatStore[phone].lastMessageTimestamp) {
-          chatStore[phone].lastMessage = incomingText.trim();
-          chatStore[phone].lastMessageFrom = isFromMe ? 'me' : 'contact';
-          chatStore[phone].lastMessageTimestamp = msgTimestamp;
-          chatStore[phone].replied = isFromMe;
-          updatedAny = true;
+        if (isFromMe) {
+          // رسالة مني سابقة: نسجلها في التاريخ دون تفعيل manualMode
+          if (!chatStore[phone]) {
+            chatStore[phone] = {
+              phone,
+              remoteJid,
+              name: '',
+              lastMessage: incomingText.trim(),
+              lastMessageFrom: 'me',
+              lastMessageTimestamp: msgTimestamp,
+              replied: true,
+              replyCount: 0,
+              manualMode: false,
+              history: []
+            };
+            updatedAny = true;
+          } else if (!chatStore[phone].lastMessageTimestamp || msgTimestamp >= chatStore[phone].lastMessageTimestamp) {
+            chatStore[phone].lastMessage = incomingText.trim();
+            chatStore[phone].lastMessageFrom = 'me';
+            chatStore[phone].lastMessageTimestamp = msgTimestamp;
+            chatStore[phone].replied = true;
+            updatedAny = true;
+          }
+        } else {
+          // رسالة من عميل واردة من التاريخ: نسجلها ونضيفها لطابور السحابة إذا لم يُرد عليها
+          if (!chatStore[phone]) {
+            chatStore[phone] = {
+              phone,
+              remoteJid,
+              name: msg.pushName || '',
+              lastMessage: incomingText.trim(),
+              lastMessageFrom: 'contact',
+              lastMessageTimestamp: msgTimestamp,
+              replied: false,
+              replyCount: 0,
+              manualMode: false,
+              history: []
+            };
+            updatedAny = true;
+          } else if (!chatStore[phone].lastMessageTimestamp || msgTimestamp >= chatStore[phone].lastMessageTimestamp) {
+            chatStore[phone].lastMessage = incomingText.trim();
+            chatStore[phone].lastMessageFrom = 'contact';
+            chatStore[phone].lastMessageTimestamp = msgTimestamp;
+            chatStore[phone].replied = false;
+            updatedAny = true;
+          }
+
+          if (!chatStore[phone].replied && !chatStore[phone].manualMode) {
+            enqueueInboundMessage({
+              id: msg.key?.id || `${phone}_${msgTimestamp}`,
+              phone,
+              remoteJid,
+              senderName: msg.pushName || '',
+              messageType: 'text',
+              incomingText: incomingText.trim(),
+              receivedAt: msgTimestamp
+            });
+          }
         }
 
         // تسجيل الرسالة في سجل المحادثات التاريخي
@@ -1812,6 +2084,7 @@ app.get('/copilot', (req, res) => {
 // قائمة المحادثات لـ Copilot
 app.get('/api/copilot/chats', (req, res) => {
   const list = Object.entries(chatStore).map(([phone, c]) => {
+    const isUnreplied = c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode;
     return {
       phone,
       name: c.name || `عميل (${phone.slice(-4)})`,
@@ -1821,16 +2094,19 @@ app.get('/api/copilot/chats', (req, res) => {
       replyCount: c.replyCount || 0,
       manualMode: !!c.manualMode,
       hasPendingDraft: !!c.pendingDraft,
+      isUnreplied: isUnreplied,
       pendingDraft: c.pendingDraft?.text || null,
-      status: c.pendingDraft ? 'pending_approval' : (c.replied ? 'replied' : 'waiting_reply'),
+      status: c.pendingDraft ? 'pending_approval' : (isUnreplied ? 'waiting_reply' : (c.replied ? 'replied' : 'waiting_reply')),
       dismissedAt: c.dismissedAt || null
     };
   });
 
-  // فرز ذكي: المحادثات التي لديها مسودة بانتظار الاعتماد أولاً، ثم حسب آخر رسالة
+  // فرز ذكي: المحادثات التي لديها مسودة أو عميل ينتظر الرد أولاً، ثم حسب آخر رسالة
   list.sort((a, b) => {
-    if (a.hasPendingDraft && !b.hasPendingDraft) return -1;
-    if (!a.hasPendingDraft && b.hasPendingDraft) return 1;
+    const aUrgent = a.hasPendingDraft || a.isUnreplied;
+    const bUrgent = b.hasPendingDraft || b.isUnreplied;
+    if (aUrgent && !bUrgent) return -1;
+    if (!aUrgent && bUrgent) return 1;
     return (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0);
   });
 
@@ -1896,7 +2172,14 @@ app.post('/api/copilot/send', async (req, res) => {
     c.history = c.history.slice(-16);
     delete c.pendingDraft;
     c.dismissedAt = Date.now() + 90000; // أرشفة تلقائية من قائمة الانتظار بعد دقيقة ونصف
-    saveChatStore();
+    saveChatStore(cleanPhone);
+
+    // تحديث الطابور السحابي
+    supabaseQuery(`
+      UPDATE workflow_taleed.inbound_message_queue 
+      SET status = 'replied', reply_text = '${text.trim().replace(/'/g, "''")}', replied_at = now(), updated_at = now()
+      WHERE phone = '${cleanPhone}' AND status IN ('pending', 'drafted');
+    `).catch(() => {});
 
     // فحص التعلّم الذاتي: هل عدل المستخدم البشري المسودة؟
     let learned = false;
@@ -1915,6 +2198,99 @@ app.post('/api/copilot/send', async (req, res) => {
   }
 });
 
+// إرسال الردود الذكية لكافة العملاء المعلقين بنقرة واحدة (1-Click Safe Batch Reply)
+app.post('/api/copilot/reply-all-pending', async (req, res) => {
+  const sock = sessions['admin_instance_1'];
+  if (!sock || sessionStatus['admin_instance_1'] !== 'connected') {
+    return res.status(503).json({ error: 'سيرفر الواتساب غير متصل حالياً' });
+  }
+
+  const pendingList = [];
+  for (const [p, c] of Object.entries(chatStore)) {
+    if ((c.pendingDraft || (c.lastMessageFrom === 'contact' && !c.replied)) && !c.manualMode) {
+      pendingList.push(p);
+    }
+  }
+
+  if (pendingList.length === 0) {
+    return res.json({ success: true, count: 0, message: 'لا توجد رسائل معلقة بانتظار الرد حالياً' });
+  }
+
+  // المعالجة الآمنة في الخلفية بتتابع إنساني لمنع الحظر
+  (async () => {
+    console.log(`[Batch Reply] 🚀 Starting safe 1-click batch reply for ${pendingList.length} clients...`);
+    for (let i = 0; i < pendingList.length; i++) {
+      const p = pendingList[i];
+      const c = chatStore[p];
+      if (!c) continue;
+
+      let replyText = c.pendingDraft?.text;
+      if (!replyText) {
+        const hist = c.history || [];
+        replyText = await generateGeminiResponse(hist.slice(-12));
+      }
+      if (!replyText) continue;
+
+      // إضافة اعتذار لطيف إذا تأخر الرد أكثر من 15 دقيقة
+      const delayMs = Date.now() - (c.lastMessageTimestamp || Date.now());
+      if (delayMs > 15 * 60 * 1000 && !replyText.includes('المعذرة') && !replyText.includes('معذرة')) {
+        replyText = `حياك الله يا غالي، والمعذرة منك على التأخر بالرد لانشغال الخط.. 🌿\n\n${replyText}`;
+      }
+
+      const jid = c.remoteJid || `${p}@s.whatsapp.net`;
+      try {
+        const sent = await sock.sendMessage(jid, { text: replyText.trim() });
+        if (sent?.key?.id) systemSentMsgIds.add(sent.key.id);
+
+        c.replied = true;
+        c.replyCount = (c.replyCount || 0) + 1;
+        c.lastMessageFrom = 'me';
+        c.lastMessage = replyText.trim();
+        c.lastMessageTimestamp = Date.now();
+        c.history = c.history || [];
+        c.history.push({ role: 'model', parts: [{ text: replyText.trim() }] });
+        delete c.pendingDraft;
+        c.dismissedAt = Date.now() + 90000;
+        saveChatStore(p);
+
+        supabaseQuery(`
+          UPDATE workflow_taleed.inbound_message_queue 
+          SET status = 'replied', reply_text = '${replyText.trim().replace(/'/g, "''")}', replied_at = now(), updated_at = now()
+          WHERE phone = '${p}' AND status IN ('pending', 'drafted');
+        `).catch(() => {});
+
+        broadcastCopilotEvent('message_sent', { phone: p, text: replyText.trim() });
+        console.log(`[Batch Reply] [${i+1}/${pendingList.length}] ✅ Sent reply to +${p}`);
+      } catch (err) {
+        console.error(`[Batch Reply] Error sending to +${p}:`, err.message);
+      }
+
+      if (i < pendingList.length - 1) {
+        await sleepMs(Math.floor(Math.random() * 3000) + 7000);
+      }
+    }
+    console.log(`[Batch Reply] 🏁 Finished sending batch replies!`);
+  })();
+
+  res.json({ success: true, count: pendingList.length, message: `جاري إرسال الردود الذكية لـ ${pendingList.length} عميل بالتتابع الآمن في الخلفية.` });
+});
+
+// إلغاء الإشراف اليدوي عن الجميع واستعادة الذكاء الاصطناعي
+app.post('/api/copilot/reset-manual-all', (req, res) => {
+  let count = 0;
+  for (const [p, c] of Object.entries(chatStore)) {
+    if (c.manualMode) {
+      c.manualMode = false;
+      count++;
+      syncChatToCloud(p);
+    }
+  }
+  saveChatStore();
+  broadcastCopilotEvent('manual_reset_all', { count });
+  console.log(`[Manual Reset] 🔓 Reset manual mode for ${count} contacts.`);
+  res.json({ success: true, count, message: `تم تفعيل الذكاء الاصطناعي لـ ${count} رقم بنجاح` });
+});
+
 // إعادة اقتراح مسودة جديدة
 app.post('/api/copilot/regenerate', async (req, res) => {
   const { phone } = req.body;
@@ -1929,7 +2305,7 @@ app.post('/api/copilot/regenerate', async (req, res) => {
 
   if (newReply) {
     c.pendingDraft = { text: newReply, originalDraft: newReply, timestamp: Date.now() };
-    saveChatStore();
+    saveChatStore(cleanPhone);
     broadcastCopilotEvent('draft_ready', { phone: cleanPhone, draft: newReply });
     res.json({ success: true, draft: newReply });
   } else {
@@ -1943,7 +2319,7 @@ app.post('/api/copilot/dismiss', (req, res) => {
   const cleanPhone = String(phone).replace(/[^0-9]/g, '');
   if (chatStore[cleanPhone]) {
     chatStore[cleanPhone].dismissedAt = Date.now() + 180000; // إخفاء لـ 3 دقائق
-    saveChatStore();
+    saveChatStore(cleanPhone);
     broadcastCopilotEvent('chat_dismissed', { phone: cleanPhone });
   }
   res.json({ success: true });
@@ -1957,19 +2333,28 @@ app.post('/api/copilot/delete-chat', (req, res) => {
   if (chatStore[cleanPhone]) {
     delete chatStore[cleanPhone];
     saveChatStore();
+    supabaseQuery(`DELETE FROM workflow_taleed.chat_store WHERE phone = '${cleanPhone}';`).catch(() => {});
     broadcastCopilotEvent('chat_deleted', { phone: cleanPhone });
     console.log(`[Copilot Delete] 🗑️ تم حذف المحادثة للرقم +${cleanPhone} بنجاح.`);
   }
   res.json({ success: true });
 });
 
-// تبديل الوضع (Copilot / Autopilot)
-app.post('/api/copilot/mode', (req, res) => {
+// تبديل وحفظ الوضع الدائم في السحابة (Copilot / Autopilot)
+app.post('/api/copilot/mode', async (req, res) => {
   const { mode } = req.body;
   if (mode === 'copilot' || mode === 'autopilot') {
     SYSTEM_MODE = mode;
     console.log(`[System Mode Changed] 🔄 النظام الآن يعمل بوضع: [${SYSTEM_MODE}]`);
     broadcastCopilotEvent('mode_changed', { mode: SYSTEM_MODE });
+    try {
+      await supabaseQuery(`
+        INSERT INTO workflow_taleed.system_settings (key, value, updated_at)
+        VALUES ('system_mode', '"${mode}"'::jsonb, now())
+        ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now();
+      `);
+      console.log(`[System Mode Saved] ☁️ Successfully persisted mode [${mode}] to Supabase!`);
+    } catch (e) {}
     return res.json({ success: true, mode: SYSTEM_MODE });
   }
   res.status(400).json({ error: 'Invalid mode' });
@@ -1978,11 +2363,13 @@ app.post('/api/copilot/mode', (req, res) => {
 // إحصائيات لوحة التحكم
 app.get('/api/copilot/stats', (req, res) => {
   const pendingCount = Object.values(chatStore).filter(c => c.pendingDraft).length;
+  const unrepliedCount = Object.values(chatStore).filter(c => c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode).length;
   res.json({
     systemMode: SYSTEM_MODE,
     whatsappConnected: sessionStatus['admin_instance_1'] === 'connected',
     totalChats: Object.keys(chatStore).length,
     pendingApprovals: pendingCount,
+    unrepliedCount: unrepliedCount,
     learningRulesCount: aiLearningMemory.length
   });
 });

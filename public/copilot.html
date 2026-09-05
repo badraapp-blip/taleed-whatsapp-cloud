@@ -646,6 +646,18 @@
         <span>تحديث شامل</span>
       </button>
 
+      <!-- Batch Reply Button -->
+      <button id="btnBatchReply" class="btn-sync" onclick="replyAllPending()" style="color:#ef4444; border-color:#ef4444;" title="الرد الذكي الفوري على كافة الزبائن المعلقين">
+        <span>⚡</span>
+        <span>الرد على الجميع</span>
+      </button>
+
+      <!-- Unblock AI Button -->
+      <button id="btnResetManual" class="btn-sync" onclick="resetManualAll()" style="color:#f59e0b; border-color:#f59e0b;" title="إلغاء الإشراف اليدوي وتفعيل الذكاء الاصطناعي لكافة الأرقام">
+        <span>🔓</span>
+        <span>تفعيل الذكاء للكل</span>
+      </button>
+
       <!-- System Mode Toggle -->
       <div id="modePill" class="mode-pill mode-copilot" onclick="toggleSystemMode()">
         <span>🎛️</span>
@@ -660,6 +672,18 @@
     </div>
   </header>
 
+  <!-- Urgent Missed Messages Notification Banner -->
+  <div id="urgentAlertBanner" style="display:none; background: #7f1d1d; color: #fecaca; padding: 10px 16px; border-bottom: 1px solid #ef4444; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; z-index: 9;">
+    <div style="display:flex; align-items:center; gap: 8px;">
+      <span style="font-size: 18px;">⚠️</span>
+      <span id="urgentAlertText">يوجد عملاء بانتظار الرد عليهم!</span>
+    </div>
+    <div style="display:flex; gap: 8px; align-items:center;">
+      <button onclick="replyAllPending()" style="background:#ef4444; color:white; border:none; padding:6px 14px; border-radius:8px; cursor:pointer; font-family:Cairo; font-weight:bold; box-shadow:0 2px 4px rgba(0,0,0,0.3);">⚡ الرد الذكي على الجميع الآن</button>
+      <button onclick="setFilter('pending', document.querySelector('.filter-btn'))" style="background:#1e293b; color:#cbd5e1; border:1px solid #475569; padding:6px 12px; border-radius:8px; cursor:pointer; font-family:Cairo;">عرض المعلقين 🔍</button>
+    </div>
+  </div>
+
   <!-- Main Container -->
   <div class="app-container">
     
@@ -672,7 +696,7 @@
         </div>
         <div class="filter-tabs">
           <button class="filter-btn active" onclick="setFilter('pending', this)">
-            🔴 بانتظار الاعتماد <span id="pendingBadge" style="background:#dc2626; color:white; padding:1px 6px; border-radius:10px; font-size:10px; display:none;">0</span>
+            🔴 بانتظار الرد <span id="pendingBadge" style="background:#dc2626; color:white; padding:1px 6px; border-radius:10px; font-size:10px; display:none;">0</span>
           </button>
           <button class="filter-btn" onclick="setFilter('all', this)">الكل</button>
           <button class="filter-btn" onclick="setFilter('replied', this)">تم الرد</button>
@@ -986,14 +1010,30 @@
         const res = await fetch(url);
         const chats = await res.json();
         
-        const pendingCount = chats.filter(c => c.hasPendingDraft).length;
-        if (pendingCount > previousPendingCount && previousPendingCount >= 0) {
+        const urgentCount = chats.filter(c => c.hasPendingDraft || c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode)).length;
+        if (urgentCount > previousPendingCount && previousPendingCount >= 0) {
           playChime();
         }
-        previousPendingCount = pendingCount;
+        previousPendingCount = urgentCount;
 
         allChats = chats;
         document.getElementById('totalChatsCount').textContent = `(إجمالي المحادثات: ${chats.length})`;
+
+        const alertBanner = document.getElementById('urgentAlertBanner');
+        const alertText = document.getElementById('urgentAlertText');
+        const pBadge = document.getElementById('pendingBadge');
+        if (urgentCount > 0) {
+          if (alertBanner) alertBanner.style.display = 'flex';
+          if (alertText) alertText.textContent = `يوجد ${urgentCount} عميل بانتظار الرد عليهم فوراً!`;
+          if (pBadge) {
+            pBadge.textContent = urgentCount;
+            pBadge.style.display = 'inline-block';
+          }
+        } else {
+          if (alertBanner) alertBanner.style.display = 'none';
+          if (pBadge) pBadge.style.display = 'none';
+        }
+
         renderChats();
 
         if (activePhone) {
@@ -1005,7 +1045,7 @@
     function setFilter(filter, el) {
       currentFilter = filter;
       document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-      el.classList.add('active');
+      if (el) el.classList.add('active');
       renderChats();
     }
 
@@ -1015,10 +1055,11 @@
       
       let filtered = allChats.filter(c => {
         const isDismissed = c.dismissedAt && Date.now() < c.dismissedAt;
+        const isUrgent = c.hasPendingDraft || c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode);
         if (currentFilter === 'pending') {
-          return c.hasPendingDraft && !isDismissed;
+          return isUrgent && !isDismissed;
         }
-        if (currentFilter === 'replied') return c.status === 'replied';
+        if (currentFilter === 'replied') return c.status === 'replied' && !isUrgent;
         if (currentFilter === 'manual') return c.manualMode;
         return true;
       });
@@ -1040,7 +1081,9 @@
         const isActive = c.phone === activePhone ? 'active' : '';
         let tagHtml = '';
         if (c.hasPendingDraft) {
-          tagHtml = '<span class="status-tag tag-pending">🔴 بانتظار الموافقة</span>';
+          tagHtml = '<span class="status-tag tag-pending">🔴 مسودة للموافقة</span>';
+        } else if (c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode)) {
+          tagHtml = '<span class="status-tag" style="background:#b91c1c; color:white; animation: pulse 1.5s infinite;">⏳ عميل ينتظر الرد</span>';
         } else if (c.manualMode) {
           tagHtml = '<span class="status-tag tag-manual">👤 إشراف يدوي</span>';
         } else if (c.status === 'replied') {
@@ -1279,6 +1322,37 @@
         });
         loadActiveChat(activePhone);
       } catch(e){}
+    }
+
+    async function replyAllPending() {
+      if (!confirm('هل تريد بالتأكيد إرسال الردود الذكية لجميع العملاء الذين ينتظرون الرد في الخلفية بأمان؟')) return;
+      try {
+        const res = await fetch('/api/copilot/reply-all-pending', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showNotificationToast(`🚀 ${data.message}`);
+          fetchChats(true);
+        } else {
+          alert(data.error || 'حدث خطأ');
+        }
+      } catch (err) {
+        alert('خطأ أثناء إطلاق الردود: ' + err.message);
+      }
+    }
+
+    async function resetManualAll() {
+      if (!confirm('هل تريد إلغاء الإشراف اليدوي عن كافة الأرقام وتفعيل الرد الذكي لهم؟')) return;
+      try {
+        const res = await fetch('/api/copilot/reset-manual-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showNotificationToast(`🔓 ${data.message}`);
+          fetchChats(true);
+          if (activePhone) loadActiveChat(activePhone, true);
+        }
+      } catch (err) {
+        alert('خطأ: ' + err.message);
+      }
     }
 
     window.onload = checkPin;
