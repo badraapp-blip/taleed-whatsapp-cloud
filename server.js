@@ -50,9 +50,19 @@ async function supabaseQuery(sql) {
       },
       body: JSON.stringify({ query: sql })
     });
-    if (!res.ok) return null;
-    return await res.json();
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error('[Supabase Query Error]:', errText);
+      return null;
+    }
+    const data = await res.json();
+    if (data && data.message && data.message.includes('ERROR:')) {
+      console.error('[Supabase SQL Error]:', data.message);
+      return null;
+    }
+    return data;
   } catch (err) {
+    console.error('[Supabase Network Error]:', err.message);
     return null;
   }
 }
@@ -102,10 +112,14 @@ function backupSessionToSupabase(sessionId) {
       const count = Object.keys(filesObj).length;
       if (count > 0) {
         const serialized = JSON.stringify(filesObj).replace(/'/g, "''");
+        let credsJson = 'NULL';
+        if (filesObj['creds.json']) {
+          credsJson = `'${filesObj['creds.json'].replace(/'/g, "''")}'::jsonb`;
+        }
         await supabaseQuery(`
-          INSERT INTO workflow_taleed.whatsapp_sessions (id, files, updated_at)
-          VALUES ('${sessionId}', '${serialized}'::jsonb, now())
-          ON CONFLICT (id) DO UPDATE SET files = EXCLUDED.files, updated_at = now();
+          INSERT INTO workflow_taleed.whatsapp_sessions (id, creds, files, updated_at)
+          VALUES ('${sessionId}', ${credsJson}, '${serialized}'::jsonb, now())
+          ON CONFLICT (id) DO UPDATE SET creds = EXCLUDED.creds, files = EXCLUDED.files, updated_at = now();
         `);
         console.log(`[SessionSync] ☁️ Successfully backed up ${count} native session files to Supabase cloud!`);
       }
