@@ -84,7 +84,17 @@ async function restoreSessionFromSupabase(sessionId) {
       if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
       const entries = Object.entries(filesObj);
       for (const [filename, content] of entries) {
-        fs.writeFileSync(path.join(targetDir, filename), content, 'utf8');
+        let contentToWrite = typeof content === 'string' ? content : JSON.stringify(content);
+        if (filename === 'creds.json') {
+          try {
+            const parsed = JSON.parse(contentToWrite);
+            if (parsed.me && parsed.me.id && !parsed.registered) {
+              parsed.registered = true;
+              contentToWrite = JSON.stringify(parsed);
+            }
+          } catch(e){}
+        }
+        fs.writeFileSync(path.join(targetDir, filename), contentToWrite, 'utf8');
       }
       console.log(`[SessionSync] ☁️ Restored ${entries.length} native session files from Supabase cloud!`);
       return true;
@@ -111,11 +121,18 @@ function backupSessionToSupabase(sessionId) {
       }
       const count = Object.keys(filesObj).length;
       if (count > 0) {
-        const serialized = JSON.stringify(filesObj).replace(/'/g, "''");
         let credsJson = 'NULL';
         if (filesObj['creds.json']) {
+          try {
+            const parsed = JSON.parse(filesObj['creds.json']);
+            if (parsed.me && parsed.me.id && !parsed.registered) {
+              parsed.registered = true;
+              filesObj['creds.json'] = JSON.stringify(parsed);
+            }
+          } catch(e){}
           credsJson = `'${filesObj['creds.json'].replace(/'/g, "''")}'::jsonb`;
         }
+        const serialized = JSON.stringify(filesObj).replace(/'/g, "''");
         await supabaseQuery(`
           INSERT INTO workflow_taleed.whatsapp_sessions (id, creds, files, updated_at)
           VALUES ('${sessionId}', ${credsJson}, '${serialized}'::jsonb, now())
