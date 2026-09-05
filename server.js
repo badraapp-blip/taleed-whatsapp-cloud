@@ -690,12 +690,21 @@ function extractMessageText(message) {
   if (m.conversation) return m.conversation;
   if (m.extendedTextMessage?.text) return m.extendedTextMessage.text;
   if (m.imageMessage?.caption) return m.imageMessage.caption;
+  if (m.imageMessage) return '[📷 صورة]';
   if (m.videoMessage?.caption) return m.videoMessage.caption;
+  if (m.videoMessage) return '[🎥 فيديو]';
   if (m.documentMessage?.caption) return m.documentMessage.caption;
+  if (m.documentMessage?.fileName) return `[📄 ملف: ${m.documentMessage.fileName}]`;
+  if (m.documentMessage) return '[📄 مستند]';
+  if (m.stickerMessage) return '[🏷️ ملصق]';
+  if (m.locationMessage) return '[📍 موقع جغرافي]';
+  if (m.contactMessage?.displayName) return `[👤 جهة اتصال: ${m.contactMessage.displayName}]`;
+  if (m.contactMessage) return '[👤 جهة اتصال]';
+  if (m.contactsArrayMessage) return '[👥 جهات اتصال متعددة]';
   if (m.buttonsResponseMessage?.selectedButtonId) return m.buttonsResponseMessage.selectedButtonId;
   if (m.listResponseMessage?.singleSelectReply?.selectedRowId) return m.listResponseMessage.singleSelectReply.selectedRowId;
   if (m.templateButtonReplyMessage?.selectedId) return m.templateButtonReplyMessage.selectedId;
-  if (m.audioMessage) return '[تسجيل صوتي من العميل]';
+  if (m.audioMessage) return '[🎙️ تسجيل صوتي]';
 
   return '';
 }
@@ -963,7 +972,7 @@ async function handleAiReply(sessionId, remoteJid, phone, incomingText) {
       parts: [{ text: aiResponseText }],
       timestamp: Date.now()
     });
-    chatStore[phone].history = hist.slice(-16);
+    chatStore[phone].history = hist.slice(-50);
     delete chatStore[phone].pendingDraft;
     saveChatStore(phone);
 
@@ -1276,130 +1285,136 @@ function setupAiAutoResponder(sessionId, sock) {
     if (messages && messages.length > 0) {
       const updatedPhones = new Set();
       for (const msg of messages) {
-        if (!msg.message) continue;
-        const remoteJid = msg.key?.remoteJid;
-        if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) continue;
-        if (!remoteJid.endsWith('@s.whatsapp.net') && !remoteJid.endsWith('@lid')) continue;
+        try {
+          if (!msg.message) continue;
+          const remoteJid = msg.key?.remoteJid;
+          if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) continue;
+          if (!remoteJid.endsWith('@s.whatsapp.net') && !remoteJid.endsWith('@lid')) continue;
 
-        const incomingText = extractMessageText(msg.message);
-        if (!incomingText || !incomingText.trim()) continue;
+          const incomingText = extractMessageText(msg.message);
+          if (!incomingText || !incomingText.trim()) continue;
 
-        // استخراج رقم الهاتف الحقيقي عبر senderPn أو participantPn
-        let phone = null;
-        const pnJid = msg.key?.senderPn || msg.key?.participantPn;
-        if (pnJid && typeof pnJid === 'string' && pnJid.includes('@s.whatsapp.net')) {
-          phone = pnJid.split('@')[0].replace(/[^0-9]/g, '');
-        }
+          // استخراج رقم الهاتف الحقيقي عبر senderPn أو participantPn
+          let phone = null;
+          const pnJid = msg.key?.senderPn || msg.key?.participantPn;
+          if (pnJid && typeof pnJid === 'string' && pnJid.includes('@s.whatsapp.net')) {
+            phone = pnJid.split('@')[0].replace(/[^0-9]/g, '');
+          }
 
-        if (!phone) {
-          if (remoteJid.endsWith('@s.whatsapp.net')) {
-            phone = remoteJid.split('@')[0].replace(/[^0-9]/g, '');
-          } else if (remoteJid.endsWith('@lid')) {
+          if (!phone) {
+            if (remoteJid.endsWith('@s.whatsapp.net')) {
+              phone = remoteJid.split('@')[0].replace(/[^0-9]/g, '');
+            } else if (remoteJid.endsWith('@lid')) {
+              const cleanLid = remoteJid.split('@')[0].replace(/[^0-9]/g, '');
+              phone = lidToPhoneMap[cleanLid] || resolveLidFromChatStore(cleanLid);
+            }
+          }
+
+          if (remoteJid.endsWith('@lid') && phone) {
             const cleanLid = remoteJid.split('@')[0].replace(/[^0-9]/g, '');
-            phone = lidToPhoneMap[cleanLid] || resolveLidFromChatStore(cleanLid);
-          }
-        }
-
-        if (remoteJid.endsWith('@lid') && phone) {
-          const cleanLid = remoteJid.split('@')[0].replace(/[^0-9]/g, '');
-          if (cleanLid && cleanLid !== phone) {
-            lidToPhoneMap[cleanLid] = phone;
-            saveLidMap();
-          }
-        }
-
-        if (!phone) {
-          phone = remoteJid.split('@')[0].replace(/[^0-9]/g, '');
-        }
-
-        const isFromMe = !!msg.key.fromMe;
-        const msgTimestamp = typeof msg.messageTimestamp === 'number'
-          ? msg.messageTimestamp * 1000
-          : (msg.messageTimestamp?.low ? msg.messageTimestamp.low * 1000 : Date.now());
-
-        if (isFromMe) {
-          // رسالة مني سابقة: نسجلها في التاريخ دون تفعيل manualMode
-          if (!chatStore[phone]) {
-            chatStore[phone] = {
-              phone,
-              remoteJid: `${phone}@s.whatsapp.net`,
-              name: contactsMap[phone] || '',
-              lastMessage: incomingText.trim(),
-              lastMessageFrom: 'me',
-              lastMessageTimestamp: msgTimestamp,
-              replied: true,
-              replyCount: 0,
-              manualMode: false,
-              history: []
-            };
-            updatedPhones.add(phone);
-          } else if (!chatStore[phone].lastMessageTimestamp || msgTimestamp >= chatStore[phone].lastMessageTimestamp) {
-            chatStore[phone].lastMessage = incomingText.trim();
-            chatStore[phone].lastMessageFrom = 'me';
-            chatStore[phone].lastMessageTimestamp = msgTimestamp;
-            chatStore[phone].replied = true;
-            updatedPhones.add(phone);
-          }
-        } else {
-          // رسالة من عميل واردة من التاريخ: نسجلها ونضيفها لطابور السحابة إذا لم يُرد عليها
-          if (!chatStore[phone]) {
-            chatStore[phone] = {
-              phone,
-              remoteJid: `${phone}@s.whatsapp.net`,
-              name: msg.pushName || contactsMap[phone] || '',
-              lastMessage: incomingText.trim(),
-              lastMessageFrom: 'contact',
-              lastMessageTimestamp: msgTimestamp,
-              replied: false,
-              replyCount: 0,
-              manualMode: false,
-              history: []
-            };
-            updatedPhones.add(phone);
-          } else if (!chatStore[phone].lastMessageTimestamp || msgTimestamp >= chatStore[phone].lastMessageTimestamp) {
-            chatStore[phone].lastMessage = incomingText.trim();
-            chatStore[phone].lastMessageFrom = 'contact';
-            chatStore[phone].lastMessageTimestamp = msgTimestamp;
-            chatStore[phone].replied = false;
-            updatedPhones.add(phone);
+            if (cleanLid && cleanLid !== phone) {
+              lidToPhoneMap[cleanLid] = phone;
+              saveLidMap();
+            }
           }
 
-          if (remoteJid.endsWith('@lid')) {
-            chatStore[phone].lid = remoteJid;
+          if (!phone) {
+            phone = remoteJid.split('@')[0].replace(/[^0-9]/g, '');
           }
 
-          if (!chatStore[phone].replied && !chatStore[phone].manualMode) {
-            enqueueInboundMessage({
+          const isFromMe = !!msg.key.fromMe;
+          const msgTimestamp = typeof msg.messageTimestamp === 'number'
+            ? msg.messageTimestamp * 1000
+            : (msg.messageTimestamp?.low ? msg.messageTimestamp.low * 1000 : Date.now());
+
+          const cleanHistText = incomingText.trim();
+
+          if (isFromMe) {
+            // رسالة مني سابقة: نسجلها في التاريخ دون تفعيل manualMode
+            if (!chatStore[phone]) {
+              chatStore[phone] = {
+                phone,
+                remoteJid: `${phone}@s.whatsapp.net`,
+                name: contactsMap[phone] || '',
+                lastMessage: cleanHistText,
+                lastMessageFrom: 'me',
+                lastMessageTimestamp: msgTimestamp,
+                replied: true,
+                replyCount: 0,
+                manualMode: false,
+                history: []
+              };
+              updatedPhones.add(phone);
+            } else if (!chatStore[phone].lastMessageTimestamp || msgTimestamp >= chatStore[phone].lastMessageTimestamp) {
+              chatStore[phone].lastMessage = cleanHistText;
+              chatStore[phone].lastMessageFrom = 'me';
+              chatStore[phone].lastMessageTimestamp = msgTimestamp;
+              chatStore[phone].replied = true;
+              updatedPhones.add(phone);
+            }
+          } else {
+            // رسالة من عميل واردة من التاريخ: نسجلها ونضيفها لطابور السحابة إذا لم يُرد عليها
+            if (!chatStore[phone]) {
+              chatStore[phone] = {
+                phone,
+                remoteJid: `${phone}@s.whatsapp.net`,
+                name: msg.pushName || contactsMap[phone] || '',
+                lastMessage: cleanHistText,
+                lastMessageFrom: 'contact',
+                lastMessageTimestamp: msgTimestamp,
+                replied: false,
+                replyCount: 0,
+                manualMode: false,
+                history: []
+              };
+              updatedPhones.add(phone);
+            } else if (!chatStore[phone].lastMessageTimestamp || msgTimestamp >= chatStore[phone].lastMessageTimestamp) {
+              chatStore[phone].lastMessage = cleanHistText;
+              chatStore[phone].lastMessageFrom = 'contact';
+              chatStore[phone].lastMessageTimestamp = msgTimestamp;
+              chatStore[phone].replied = false;
+              updatedPhones.add(phone);
+            }
+
+            if (remoteJid.endsWith('@lid')) {
+              chatStore[phone].lid = remoteJid;
+            }
+
+            if (!chatStore[phone].replied && !chatStore[phone].manualMode) {
+              enqueueInboundMessage({
+                id: msg.key?.id || `${phone}_${msgTimestamp}`,
+                phone,
+                remoteJid: chatStore[phone].remoteJid || `${phone}@s.whatsapp.net`,
+                senderName: msg.pushName || contactsMap[phone] || '',
+                messageType: 'text',
+                incomingText: cleanHistText,
+                receivedAt: msgTimestamp
+              });
+            }
+          }
+
+          // تسجيل الرسالة في سجل المحادثات التاريخي
+          chatStore[phone].history = chatStore[phone].history || [];
+          const role = isFromMe ? 'model' : 'user';
+          const exists = chatStore[phone].history.some(h => 
+            (msg.key?.id && h.id === msg.key.id) ||
+            (((h.parts?.[0]?.text || h.text || '').trim() === cleanHistText) && Math.abs((h.timestamp || 0) - msgTimestamp) < 15000)
+          );
+          if (!exists) {
+            chatStore[phone].history.push({
               id: msg.key?.id || `${phone}_${msgTimestamp}`,
-              phone,
-              remoteJid: chatStore[phone].remoteJid || `${phone}@s.whatsapp.net`,
-              senderName: msg.pushName || contactsMap[phone] || '',
-              messageType: 'text',
-              incomingText: incomingText.trim(),
-              receivedAt: msgTimestamp
+              role,
+              parts: [{ text: cleanHistText }],
+              timestamp: msgTimestamp
             });
+            chatStore[phone].history.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+            if (chatStore[phone].history.length > 50) {
+              chatStore[phone].history = chatStore[phone].history.slice(-50);
+            }
+            updatedPhones.add(phone);
           }
-        }
-
-        // تسجيل الرسالة في سجل المحادثات التاريخي
-        chatStore[phone].history = chatStore[phone].history || [];
-        const role = isFromMe ? 'model' : 'user';
-        const exists = chatStore[phone].history.some(h => 
-          (msg.key?.id && h.id === msg.key.id) ||
-          (((h.parts?.[0]?.text || h.text) === textVal) && Math.abs((h.timestamp || 0) - msgTimestamp) < 15000)
-        );
-        if (!exists) {
-          chatStore[phone].history.push({
-            id: msg.key?.id || `${phone}_${msgTimestamp}`,
-            role,
-            parts: [{ text: textVal }],
-            timestamp: msgTimestamp
-          });
-          chatStore[phone].history.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-          if (chatStore[phone].history.length > 50) {
-            chatStore[phone].history = chatStore[phone].history.slice(-50);
-          }
-          updatedPhones.add(phone);
+        } catch (msgErr) {
+          console.warn('[History Sync Msg Error]:', msgErr.message);
         }
       }
       if (updatedPhones.size > 0) {
@@ -1563,9 +1578,9 @@ async function startSession(sessionId) {
     browser: Browsers.ubuntu('Chrome'),
     syncFullHistory: false,
     shouldSyncHistoryMessage: (h) => {
-      // مزامنة رسائل الـ RECENT والـ BOOTSTRAP الواردة أثناء إعادة التشغيل أو الانقطاع المؤقت
-      // واستبعاد التزامن الكامل القديم (syncType === 3) لحماية الذاكرة RAM من التجاوز
-      return h && h.syncType !== 3;
+      // استبعاد التزامن الكامل القديم جداً (FULL = 2) لحماية الذاكرة RAM من التجاوز
+      // وقبول التزامن الحديث (RECENT = 3) والتمهيدي (BOOTSTRAP = 0) لعدم ضياع أي رسالة
+      return h && h.syncType !== 2;
     },
     markOnlineOnConnect: true,
     keepAliveIntervalMs: 25000,

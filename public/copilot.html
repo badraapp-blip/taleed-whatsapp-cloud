@@ -1345,7 +1345,7 @@
 
     async function loadActiveChat(phone, isFirstSelection = false, offset = 0, isPrepending = false) {
       try {
-        const url = `/api/copilot/chat/${phone}?limit=10&offset=${offset}${isFirstSelection ? '&t=' + Date.now() : ''}`;
+        const url = `/api/copilot/chat/${phone}?limit=30&offset=${offset}${isFirstSelection ? '&t=' + Date.now() : ''}`;
         const res = await fetch(url);
         const data = await res.json();
         
@@ -1423,7 +1423,7 @@
         const remaining = Math.max(0, activeChatTotalMessages - activeChatHistory.length);
         topBtnHtml = `
           <button id="btnLoadOlderMsgs" class="btn-load-more-messages" onclick="loadOlderMessages()">
-            <span>⬆️ تحميل 10 رسائل سابقة</span>
+            <span>⬆️ تحميل المزيد من الرسائل السابقة</span>
             <span style="font-size: 11px; opacity: 0.8;">(${remaining} متبقية)</span>
           </button>
         `;
