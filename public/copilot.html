@@ -1376,11 +1376,19 @@
         activeChatOffset = data.nextOffset || 0;
 
         const newMessages = data.history || [];
-        if (isPrepending) {
-          activeChatHistory = newMessages.concat(activeChatHistory);
-        } else {
-          activeChatHistory = newMessages;
+        const rawCombined = isPrepending ? newMessages.concat(activeChatHistory) : newMessages;
+        // تنقية مضاعفة من التكرار على مستوى واجهة المستخدم
+        const seenKeys = new Set();
+        const cleanedHistory = [];
+        for (const m of rawCombined) {
+          const txt = (m.parts?.[0]?.text || m.text || '').trim();
+          if (!txt) continue;
+          const key = m.id ? `id_${m.id}` : `${m.role}_${txt}_${Math.floor((m.timestamp || 0) / 30000)}`;
+          if (seenKeys.has(key)) continue;
+          seenKeys.add(key);
+          cleanedHistory.push(m);
         }
+        activeChatHistory = cleanedHistory;
 
         const container = document.getElementById('messagesContainer');
         renderActiveChatMessages(container, isFirstSelection, isPrepending);

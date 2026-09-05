@@ -891,9 +891,14 @@ async function handleAiReply(sessionId, remoteJid, phone, incomingText) {
     }
 
     const hist = chatStore[phone].history || [];
-    const lastHist = hist[hist.length - 1];
-    if (!lastHist || lastHist.role !== 'user' || lastHist.parts?.[0]?.text !== incomingText) {
-      hist.push({ role: 'user', parts: [{ text: incomingText }] });
+    const cleanIn = incomingText.trim();
+    const alreadyInHist = hist.some(h => 
+      (h.parts?.[0]?.text || h.text || '').trim() === cleanIn &&
+      h.role === 'user' &&
+      Math.abs((h.timestamp || Date.now()) - Date.now()) < 60000
+    );
+    if (!alreadyInHist) {
+      hist.push({ role: 'user', parts: [{ text: cleanIn }], timestamp: Date.now() });
     }
 
     // الاحتفاظ بآخر 12 رسالة لمنع تجاوز التوكنات
@@ -942,6 +947,7 @@ async function handleAiReply(sessionId, remoteJid, phone, incomingText) {
     const sentMsg = await sock.sendMessage(remoteJid, { text: aiResponseText });
     if (sentMsg?.key?.id) {
       systemSentMsgIds.add(sentMsg.key.id);
+      processedMsgIds.add(sentMsg.key.id);
     }
     try { await sock.sendPresenceUpdate('paused', remoteJid); } catch(e){}
 
@@ -951,7 +957,12 @@ async function handleAiReply(sessionId, remoteJid, phone, incomingText) {
     chatStore[phone].lastMessageFrom = 'me';
     chatStore[phone].lastMessage = aiResponseText;
     chatStore[phone].lastMessageTimestamp = Date.now();
-    hist.push({ role: 'model', parts: [{ text: aiResponseText }] });
+    hist.push({
+      id: sentMsg?.key?.id,
+      role: 'model',
+      parts: [{ text: aiResponseText }],
+      timestamp: Date.now()
+    });
     chatStore[phone].history = hist.slice(-16);
     delete chatStore[phone].pendingDraft;
     saveChatStore(phone);
@@ -986,12 +997,18 @@ function setupAiAutoResponder(sessionId, sock) {
   // 1. الاستماع للرسائل الواردة المباشرة
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     for (const msg of messages) {
-      if (!msg.message) continue;
+      if (!msg.message || !msg.key?.id) continue;
+
+      // منع تكرار معالجة نفس الرسالة نهائياً (صادرة أو واردة)
+      if (processedMsgIds.has(msg.key.id)) continue;
+      processedMsgIds.add(msg.key.id);
+      if (processedMsgIds.size > 5000) {
+        const firstKey = processedMsgIds.values().next().value;
+        processedMsgIds.delete(firstKey);
+      }
 
       // تخزين الرسالة في الكاش لتفادي مشكلة Bad MAC عند إعادة فك التشفير
-      if (msg.key?.id) {
-        messageCache[msg.key.id] = msg.message;
-      }
+      messageCache[msg.key.id] = msg.message;
 
       const remoteJid = msg.key?.remoteJid;
       if (!remoteJid || remoteJid === 'status@broadcast' || remoteJid.endsWith('@g.us')) continue;
@@ -1091,19 +1108,23 @@ function setupAiAutoResponder(sessionId, sock) {
         chatStore[phone].lastMessageTimestamp = msgTimestamp;
         chatStore[phone].replied = true;
         chatStore[phone].history = chatStore[phone].history || [];
-        chatStore[phone].history.push({ role: 'model', parts: [{ text: incomingText.trim() }] });
+        const cleanOutText = incomingText.trim();
+        const existsOut = chatStore[phone].history.some(h => 
+          (msg.key?.id && h.id === msg.key.id) ||
+          (((h.parts?.[0]?.text || h.text) === cleanOutText) && Math.abs((h.timestamp || 0) - msgTimestamp) < 15000)
+        );
+        if (!existsOut) {
+          chatStore[phone].history.push({
+            id: msg.key.id,
+            role: 'model',
+            parts: [{ text: cleanOutText }],
+            timestamp: msgTimestamp
+          });
+        }
         if (chatStore[phone].history.length > 50) chatStore[phone].history = chatStore[phone].history.slice(-50);
         saveChatStore(phone);
-        broadcastCopilotEvent('outgoing_message', { phone, text: incomingText.trim() });
+        broadcastCopilotEvent('outgoing_message', { phone, text: cleanOutText });
         continue;
-      }
-
-      // منع تكرار معالجة نفس الرسالة الواردة
-      if (processedMsgIds.has(msg.key.id)) continue;
-      processedMsgIds.add(msg.key.id);
-      if (processedMsgIds.size > 2000) {
-        const firstKey = processedMsgIds.values().next().value;
-        processedMsgIds.delete(firstKey);
       }
 
       // تسجيل الرسالة فوراً في طابور السحابة الدائم لضمان عدم ضياعها تحت أي ظرف
@@ -1141,10 +1162,22 @@ function setupAiAutoResponder(sessionId, sock) {
       chatStore[phone].lastMessageTimestamp = msgTimestamp;
       chatStore[phone].replied = false;
       chatStore[phone].history = chatStore[phone].history || [];
-      chatStore[phone].history.push({ role: 'user', parts: [{ text: incomingText.trim() }] });
+      const cleanInText = incomingText.trim();
+      const existsIn = chatStore[phone].history.some(h => 
+        (msg.key?.id && h.id === msg.key.id) ||
+        (((h.parts?.[0]?.text || h.text) === cleanInText) && Math.abs((h.timestamp || 0) - msgTimestamp) < 15000)
+      );
+      if (!existsIn) {
+        chatStore[phone].history.push({
+          id: msg.key.id,
+          role: 'user',
+          parts: [{ text: cleanInText }],
+          timestamp: msgTimestamp
+        });
+      }
       if (chatStore[phone].history.length > 50) chatStore[phone].history = chatStore[phone].history.slice(-50);
       saveChatStore(phone);
-      broadcastCopilotEvent('incoming_message', { phone, text: incomingText.trim() });
+      broadcastCopilotEvent('incoming_message', { phone, text: cleanInText });
 
       // فحص الحماية اليدوية (إذا رد المستخدم بنفسه يدوياً على هذا الرقم)
       if (chatStore[phone]?.manualMode) {
@@ -1351,13 +1384,13 @@ function setupAiAutoResponder(sessionId, sock) {
         // تسجيل الرسالة في سجل المحادثات التاريخي
         chatStore[phone].history = chatStore[phone].history || [];
         const role = isFromMe ? 'model' : 'user';
-        const textVal = incomingText.trim();
         const exists = chatStore[phone].history.some(h => 
-          (h.parts?.[0]?.text === textVal || h.text === textVal) &&
-          Math.abs((h.timestamp || 0) - msgTimestamp) < 3000
+          (msg.key?.id && h.id === msg.key.id) ||
+          (((h.parts?.[0]?.text || h.text) === textVal) && Math.abs((h.timestamp || 0) - msgTimestamp) < 15000)
         );
         if (!exists) {
           chatStore[phone].history.push({
+            id: msg.key?.id || `${phone}_${msgTimestamp}`,
             role,
             parts: [{ text: textVal }],
             timestamp: msgTimestamp
@@ -2332,9 +2365,21 @@ app.post('/api/chat-store/record-and-reply', async (req, res) => {
   chatStore[cleanDigits].lastMessage = message.trim();
   chatStore[cleanDigits].lastMessageFrom = 'contact';
   chatStore[cleanDigits].lastMessageTimestamp = Date.now();
-  chatStore[cleanDigits].replied = false;
   chatStore[cleanDigits].history = chatStore[cleanDigits].history || [];
-  chatStore[cleanDigits].history.push({ role: 'user', parts: [{ text: message.trim() }] });
+  const cleanTriggerMsg = message.trim();
+  const alreadyIn = chatStore[cleanDigits].history.some(h => 
+    (h.parts?.[0]?.text || h.text || '').trim() === cleanTriggerMsg &&
+    h.role === 'user' &&
+    Math.abs((h.timestamp || 0) - Date.now()) < 15000
+  );
+  if (!alreadyIn) {
+    chatStore[cleanDigits].history.push({
+      id: `manual_${cleanDigits}_${Date.now()}`,
+      role: 'user',
+      parts: [{ text: cleanTriggerMsg }],
+      timestamp: Date.now()
+    });
+  }
   saveChatStore();
 
   console.log(`[Manual Client Message Trigger] Recorded client message for +${cleanDigits}: "${message}". Triggering AI reply...`);
@@ -2604,7 +2649,40 @@ app.get('/api/copilot/chat/:phone', (req, res) => {
   }
 
   const rawHistory = c.history || [];
-  let fullHistory = [...rawHistory];
+  let fullHistory = [];
+  const seenMsgKeys = new Set();
+
+  for (const m of rawHistory) {
+    const text = (m.parts?.[0]?.text || m.text || '').trim();
+    if (!text) continue;
+
+    // فحص المعرف الفريد إن وُجد
+    if (m.id) {
+      if (seenMsgKeys.has(m.id)) continue;
+      seenMsgKeys.add(m.id);
+    }
+
+    // فحص التكرار المتتالي لنفس المرسل ونفس النص
+    const last = fullHistory[fullHistory.length - 1];
+    const lastText = last ? (last.parts?.[0]?.text || last.text || '').trim() : null;
+    if (last && last.role === m.role && lastText === text) {
+      const timeDiff = Math.abs((last.timestamp || 0) - (m.timestamp || 0));
+      if (timeDiff < 60000 || !last.timestamp || !m.timestamp) {
+        if (m.id && !last.id) last.id = m.id;
+        if (m.timestamp && !last.timestamp) last.timestamp = m.timestamp;
+        continue;
+      }
+    }
+
+    fullHistory.push(m);
+  }
+
+  // تنظيف السجل وحفظه نظيفاً دائماً
+  if (fullHistory.length !== rawHistory.length) {
+    c.history = fullHistory;
+    saveChatStore(clean);
+  }
+
   if (fullHistory.length === 0 && c.lastMessage) {
     fullHistory.push({
       role: c.lastMessageFrom === 'me' ? 'model' : 'user',
@@ -2749,6 +2827,7 @@ app.post('/api/copilot/send', async (req, res) => {
     console.log(`[Copilot Send Success] ✅ تم الإرسال للواتساب بنجاح! Message ID: ${sent?.key?.id}`);
     if (sent?.key?.id) {
       systemSentMsgIds.add(sent.key.id);
+      processedMsgIds.add(sent.key.id);
     }
 
     if (!chatStore[cleanPhone]) {
@@ -2762,8 +2841,20 @@ app.post('/api/copilot/send', async (req, res) => {
     c.lastMessage = text.trim();
     c.lastMessageTimestamp = Date.now();
     c.history = c.history || [];
-    c.history.push({ role: 'model', parts: [{ text: text.trim() }] });
-    c.history = c.history.slice(-16);
+    const cleanSendText = text.trim();
+    const alreadyExists = c.history.some(h => 
+      (sent?.key?.id && h.id === sent.key.id) ||
+      (((h.parts?.[0]?.text || h.text || '').trim() === cleanSendText) && Math.abs((h.timestamp || 0) - Date.now()) < 15000)
+    );
+    if (!alreadyExists) {
+      c.history.push({
+        id: sent?.key?.id,
+        role: 'model',
+        parts: [{ text: cleanSendText }],
+        timestamp: Date.now()
+      });
+    }
+    c.history = c.history.slice(-50);
     delete c.pendingDraft;
     c.dismissedAt = Date.now() + 90000; // أرشفة تلقائية من قائمة الانتظار بعد دقيقة ونصف
     saveChatStore(cleanPhone);
@@ -2834,7 +2925,10 @@ app.post('/api/copilot/reply-all-pending', async (req, res) => {
       const jid = c.remoteJid || `${p}@s.whatsapp.net`;
       try {
         const sent = await sock.sendMessage(jid, { text: replyText.trim() });
-        if (sent?.key?.id) systemSentMsgIds.add(sent.key.id);
+        if (sent?.key?.id) {
+          systemSentMsgIds.add(sent.key.id);
+          processedMsgIds.add(sent.key.id);
+        }
 
         c.replied = true;
         c.replyCount = (c.replyCount || 0) + 1;
@@ -2842,7 +2936,20 @@ app.post('/api/copilot/reply-all-pending', async (req, res) => {
         c.lastMessage = replyText.trim();
         c.lastMessageTimestamp = Date.now();
         c.history = c.history || [];
-        c.history.push({ role: 'model', parts: [{ text: replyText.trim() }] });
+        const cleanReply = replyText.trim();
+        const alreadyExists = c.history.some(h => 
+          (sent?.key?.id && h.id === sent.key.id) ||
+          (((h.parts?.[0]?.text || h.text || '').trim() === cleanReply) && Math.abs((h.timestamp || 0) - Date.now()) < 15000)
+        );
+        if (!alreadyExists) {
+          c.history.push({
+            id: sent?.key?.id,
+            role: 'model',
+            parts: [{ text: cleanReply }],
+            timestamp: Date.now()
+          });
+        }
+        c.history = c.history.slice(-50);
         delete c.pendingDraft;
         c.dismissedAt = Date.now() + 90000;
         saveChatStore(p);
