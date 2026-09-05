@@ -2144,8 +2144,14 @@ function isRealPhoneNumber(phone, c) {
   if (!phone) return false;
   const clean = String(phone).replace(/[^0-9]/g, '');
   if (clean === '967770000001') return false; // استبعاد رقم الاختبار الوهمي
-  // استبعاد معرفات الأجهزة الداخلية (@lid) أو الأرقام خارج نطاق الهواتف الحقيقية (9 إلى 13 رقم)
-  if (clean.length > 13 || clean.length < 9) return false;
+  
+  // التحقق من مفاتيح الدول المعتمدة في النظام (اليمن، الخليج، والدول العربية)
+  const validPrefixes = ['967', '966', '968', '974', '971', '965', '973', '20'];
+  const hasValidPrefix = validPrefixes.some(p => clean.startsWith(p));
+  const isLocalYemen = clean.length === 9 && clean.startsWith('7');
+  if (!hasValidPrefix && !isLocalYemen) return false;
+  if (clean.length < 9 || clean.length > 12) return false;
+
   const jid = c?.remoteJid || '';
   if (jid.endsWith('@lid') || jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return false;
   return true;
