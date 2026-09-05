@@ -1580,7 +1580,7 @@ async function startSession(sessionId) {
     },
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
-    browser: Browsers.ubuntu('Chrome'),
+    browser: Browsers.macOS('Desktop'),
     syncFullHistory: false,
     shouldSyncHistoryMessage: (h) => {
       // استبعاد التزامن الكامل القديم جداً (FULL = 2) لحماية الذاكرة RAM من التجاوز
@@ -1589,7 +1589,7 @@ async function startSession(sessionId) {
     },
     markOnlineOnConnect: true,
     keepAliveIntervalMs: 25000,
-    defaultQueryTimeoutMs: undefined,
+    defaultQueryTimeoutMs: 60000,
     generateHighQualityLinkPreview: true,
     getMessage: async (key) => {
       if (messageCache[key.id]) {
@@ -1639,18 +1639,7 @@ async function startSession(sessionId) {
       }
 
       if (isLoggedOut) {
-        disconnectCount[sessionId] = (disconnectCount[sessionId] || 0) + 1;
-        if (disconnectCount[sessionId] > 3) {
-          console.log(`[${sessionId}] ⚠️ Permanent logout confirmed after 3 attempts. Resetting session in cloud...`);
-          disconnectCount[sessionId] = 0;
-          try {
-            if (fs.existsSync(sessionDir)) fs.rmSync(sessionDir, { recursive: true, force: true });
-          } catch(e){}
-          await supabaseQuery(`DELETE FROM workflow_taleed.whatsapp_sessions WHERE id = '${sessionId}';`);
-          await supabaseQuery(`DELETE FROM workflow_taleed.whatsapp_session_keys WHERE session_id = '${sessionId}';`);
-        } else {
-          console.log(`[${sessionId}] 🔄 Silent reconnect attempt (${disconnectCount[sessionId]}/3) without wiping credentials...`);
-        }
+        console.warn(`[${sessionId}] ⚠️ WhatsApp reported loggedOut (401). Retrying with saved credentials...`);
       }
       setTimeout(() => startSession(sessionId), 3000);
     } else if (connection === 'open') {
@@ -1660,18 +1649,6 @@ async function startSession(sessionId) {
       backupSessionToSupabase(sessionId);
       const userPhone = sock.user?.id?.split(':')[0] || 'Unknown';
       console.log(`[${sessionId}] 🟢 Connected successfully as +${userPhone} (Saved permanently to Supabase Cloud)!`);
-      
-      // جلب رابط دعوة مجتمع بذرة تلقائياً
-      try {
-        const inviteCode = await sock.groupInviteCode('120363431528894478@g.us').catch(() => null) 
-                        || await sock.groupInviteCode('120363413132197761@g.us').catch(() => null);
-        if (inviteCode) {
-          communityInviteLink = `https://chat.whatsapp.com/${inviteCode}`;
-          console.log(`[Community Link] 🔗 Resolved official community link: ${communityInviteLink}`);
-        }
-      } catch (e) {
-        console.warn(`[Community Link] Could not fetch invite code automatically:`, e.message);
-      }
     }
   });
 
