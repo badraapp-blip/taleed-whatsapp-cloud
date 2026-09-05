@@ -263,13 +263,19 @@
   "967772580721": {
     "phone": "967772580721",
     "remoteJid": "967772580721@s.whatsapp.net",
-    "name": "",
-    "lastMessage": "أمورك طيبة إن شاء الله يا أبو؟ طمنا عنك",
-    "lastMessageFrom": "me",
-    "lastMessageTimestamp": 1788598516447,
-    "replied": true,
+    "name": "أبو",
+    "lastMessage": "وعليكم السلام ورحمة الله وبركاته، الحمد لله على كل حال",
+    "lastMessageFrom": "contact",
+    "lastMessageTimestamp": 1788612087877,
+    "replied": false,
     "replyCount": 0,
     "manualMode": false,
+    "status": "pending_approval",
+    "pendingDraft": {
+      "text": "دوم يارب بألف صحة وعافية يا والد، وبشرنا كيف أمور الحلال عندك؟ يشرفنا متابعتك لقناتنا لجديد أسعار القضب والقصب اليومية وعروض تطبيق تليد: https://chat.whatsapp.com/invite",
+      "originalDraft": "دوم يارب بألف صحة وعافية يا والد، وبشرنا كيف أمور الحلال عندك؟ يشرفنا متابعتك لقناتنا لجديد أسعار القضب والقصب اليومية وعروض تطبيق تليد: https://chat.whatsapp.com/invite",
+      "timestamp": 1788615687877
+    },
     "history": [
       {
         "role": "model",
@@ -286,19 +292,33 @@
             "text": "أمورك طيبة إن شاء الله يا أبو؟ طمنا عنك"
           }
         ]
+      },
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "وعليكم السلام ورحمة الله وبركاته، الحمد لله على كل حال"
+          }
+        ]
       }
     ]
   },
   "967770260123": {
     "phone": "967770260123",
     "remoteJid": "967770260123@s.whatsapp.net",
-    "name": "",
-    "lastMessage": "يا فهد، عساك على القوة وبأتم صحة وعافية؟",
-    "lastMessageFrom": "me",
-    "lastMessageTimestamp": 1788598634845,
-    "replied": true,
+    "name": "فهد",
+    "lastMessage": "وعليكم السلام ورحمة الله وبركاته، الحمد لله بصحة وعافية، الله يحفظك، من معي؟",
+    "lastMessageFrom": "contact",
+    "lastMessageTimestamp": 1788613887877,
+    "replied": false,
     "replyCount": 0,
     "manualMode": false,
+    "status": "pending_approval",
+    "pendingDraft": {
+      "text": "يا هلا بك يا أخوي دوم بخير وعافية، معك فريق خدمة عملاء تطبيق تَلِيد لخدمات وتوصيل الأعلاف بسيئون. نوفر القضب والقصب الطازج لباب حوشك، ويسعدنا انضمامك لقناتنا لمتابعة الأسعار اليومية: https://chat.whatsapp.com/invite",
+      "originalDraft": "يا هلا بك يا أخوي دوم بخير وعافية، معك فريق خدمة عملاء تطبيق تَلِيد لخدمات وتوصيل الأعلاف بسيئون. نوفر القضب والقصب الطازج لباب حوشك، ويسعدنا انضمامك لقناتنا لمتابعة الأسعار اليومية: https://chat.whatsapp.com/invite",
+      "timestamp": 1788615687877
+    },
     "history": [
       {
         "role": "model",
@@ -313,6 +333,14 @@
         "parts": [
           {
             "text": "يا فهد، عساك على القوة وبأتم صحة وعافية؟"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "وعليكم السلام ورحمة الله وبركاته، الحمد لله بصحة وعافية، الله يحفظك، من معي؟"
           }
         ]
       }
