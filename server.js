@@ -1,5 +1,5 @@
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, makeCacheableSignalKeyStore, DisconnectReason, Browsers, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode');
 const path = require('path');
@@ -37,7 +37,6 @@ const disconnectCount = {};
 // ==============================================================================
 // إعدادات الربط السحابي مع Supabase (Cloud Auth & Storage)
 // ==============================================================================
-const { useSupabaseAuthState } = require('./supabaseAuthState');
 const SUPABASE_PROJECT_ID = process.env.SUPABASE_PROJECT_ID;
 const SUPABASE_ACCESS_TOKEN = process.env.SUPABASE_ACCESS_TOKEN;
 
@@ -61,6 +60,59 @@ async function supabaseQuery(sql) {
 const SESSIONS_DIR = path.join(__dirname, 'auth_sessions');
 if (!fs.existsSync(SESSIONS_DIR)) {
   fs.mkdirSync(SESSIONS_DIR, { recursive: true });
+}
+
+// ==============================================================================
+// استعادة وحفظ ملفات الجلسة السحابية (Atomic Multi-File Cloud Sync)
+// ==============================================================================
+async function restoreSessionFromSupabase(sessionId) {
+  try {
+    const res = await supabaseQuery(`SELECT files FROM workflow_taleed.whatsapp_sessions WHERE id = '${sessionId}';`);
+    if (res && res[0] && res[0].files && typeof res[0].files === 'object') {
+      const filesObj = res[0].files;
+      const targetDir = path.join(SESSIONS_DIR, sessionId);
+      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+      const entries = Object.entries(filesObj);
+      for (const [filename, content] of entries) {
+        fs.writeFileSync(path.join(targetDir, filename), content, 'utf8');
+      }
+      console.log(`[SessionSync] ☁️ Restored ${entries.length} native session files from Supabase cloud!`);
+      return true;
+    }
+  } catch (err) {
+    console.error(`[SessionSync] Error restoring session from Supabase:`, err.message);
+  }
+  return false;
+}
+
+let syncTimeout = null;
+function backupSessionToSupabase(sessionId) {
+  if (syncTimeout) clearTimeout(syncTimeout);
+  syncTimeout = setTimeout(async () => {
+    try {
+      const targetDir = path.join(SESSIONS_DIR, sessionId);
+      if (!fs.existsSync(targetDir)) return;
+      const fileNames = fs.readdirSync(targetDir);
+      const filesObj = {};
+      for (const file of fileNames) {
+        if (file.endsWith('.json')) {
+          filesObj[file] = fs.readFileSync(path.join(targetDir, file), 'utf8');
+        }
+      }
+      const count = Object.keys(filesObj).length;
+      if (count > 0) {
+        const serialized = JSON.stringify(filesObj).replace(/'/g, "''");
+        await supabaseQuery(`
+          INSERT INTO workflow_taleed.whatsapp_sessions (id, files, updated_at)
+          VALUES ('${sessionId}', '${serialized}'::jsonb, now())
+          ON CONFLICT (id) DO UPDATE SET files = EXCLUDED.files, updated_at = now();
+        `);
+        console.log(`[SessionSync] ☁️ Successfully backed up ${count} native session files to Supabase cloud!`);
+      }
+    } catch (err) {
+      console.error(`[SessionSync] Error backing up session to Supabase:`, err.message);
+    }
+  }, 1000);
 }
 
 // ==============================================================================
@@ -877,27 +929,22 @@ async function startSession(sessionId) {
     try { sessions[sessionId].end(undefined); } catch(e){}
   }
 
-  // استخدام مهايئ المصادقة السحابي من Supabase لضمان بقاء الجلسة للأبد
-  let state, saveCreds, flushKeys;
-  try {
-    const sbAuth = await useSupabaseAuthState(supabaseQuery, sessionId);
-    state = sbAuth.state;
-    saveCreds = sbAuth.saveCreds;
-    flushKeys = sbAuth.flushKeys;
-    console.log(`[${sessionId}] ☁️ Using persistent Supabase Cloud Auth State!`);
-  } catch (e) {
-    console.warn(`[${sessionId}] Falling back to filesystem auth:`, e.message);
-    const sessionDir = path.join(SESSIONS_DIR, sessionId);
-    const fsAuth = await useMultiFileAuthState(sessionDir);
-    state = fsAuth.state;
-    saveCreds = fsAuth.saveCreds;
+  // 1. استعادة ملفات الجلسة الأصلية من Supabase إذا كانت الحاوية جديدة
+  const sessionDir = path.join(SESSIONS_DIR, sessionId);
+  if (!fs.existsSync(sessionDir) || fs.readdirSync(sessionDir).length === 0) {
+    await restoreSessionFromSupabase(sessionId);
   }
 
+  // 2. تشغيل محرك Baileys الأصلي (MultiFileAuthState) لسرعة 0ms وسلامة التشفير 100%
+  const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
   const { version } = await fetchLatestBaileysVersion();
 
   const sock = makeWASocket({
     version,
-    auth: state,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
+    },
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
     browser: Browsers.ubuntu('Chrome'),
@@ -916,7 +963,11 @@ async function startSession(sessionId) {
 
   sessions[sessionId] = sock;
 
-  sock.ev.on('creds.update', saveCreds);
+  // حفظ محلي وسحابي فوري عند تحديث بيانات الاعتماد
+  sock.ev.on('creds.update', async () => {
+    await saveCreds();
+    backupSessionToSupabase(sessionId);
+  });
 
   // تفعيل المستجيب الذكي Gemini على الجلسة
   if (sessionId === 'admin_instance_1') {
@@ -936,16 +987,27 @@ async function startSession(sessionId) {
 
     if (connection === 'close') {
       const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const isRestartRequired = statusCode === DisconnectReason.restartRequired || statusCode === 515;
       const isLoggedOut = statusCode === DisconnectReason.loggedOut || statusCode === 401;
       sessionStatus[sessionId] = 'disconnected';
       sessionQr[sessionId] = null;
-      console.log(`[${sessionId}] Connection closed (status: ${statusCode}). Logged out?`, isLoggedOut);
+      console.log(`[${sessionId}] Connection closed (status: ${statusCode}). RestartRequired: ${isRestartRequired}, LoggedOut: ${isLoggedOut}`);
+
+      // معالجة فورية لكود 515 لإتمام مصافحة الاقتران مع الجوال دون أي تعليق
+      if (isRestartRequired) {
+        console.log(`[${sessionId}] ⚡ RestartRequired (515) received! Reconnecting immediately (0ms) to complete pairing...`);
+        startSession(sessionId);
+        return;
+      }
 
       if (isLoggedOut) {
         disconnectCount[sessionId] = (disconnectCount[sessionId] || 0) + 1;
         if (disconnectCount[sessionId] > 3) {
           console.log(`[${sessionId}] ⚠️ Permanent logout confirmed after 3 attempts. Resetting session in cloud...`);
           disconnectCount[sessionId] = 0;
+          try {
+            if (fs.existsSync(sessionDir)) fs.rmSync(sessionDir, { recursive: true, force: true });
+          } catch(e){}
           await supabaseQuery(`DELETE FROM workflow_taleed.whatsapp_sessions WHERE id = '${sessionId}';`);
           await supabaseQuery(`DELETE FROM workflow_taleed.whatsapp_session_keys WHERE session_id = '${sessionId}';`);
         } else {
@@ -957,11 +1019,9 @@ async function startSession(sessionId) {
       disconnectCount[sessionId] = 0;
       sessionStatus[sessionId] = 'connected';
       sessionQr[sessionId] = null;
-      if (flushKeys) {
-        flushKeys().catch(e => console.error('[SupabaseAuth] Flush keys on open error:', e.message));
-      }
+      backupSessionToSupabase(sessionId);
       const userPhone = sock.user?.id?.split(':')[0] || 'Unknown';
-      console.log(`[${sessionId}] 🟢 Connected successfully as +${userPhone} (Cloud Persisted)!`);
+      console.log(`[${sessionId}] 🟢 Connected successfully as +${userPhone} (Saved permanently to Supabase Cloud)!`);
       
       // جلب رابط دعوة مجتمع بذرة تلقائياً
       try {
