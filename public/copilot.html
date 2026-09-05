@@ -696,10 +696,13 @@
         </div>
         <div class="filter-tabs">
           <button class="filter-btn active" onclick="setFilter('pending', this)">
-            🔴 بانتظار الرد <span id="pendingBadge" style="background:#dc2626; color:white; padding:1px 6px; border-radius:10px; font-size:10px; display:none;">0</span>
+            🔴 بانتظار ردنا <span id="pendingBadge" style="background:#dc2626; color:white; padding:1px 6px; border-radius:10px; font-size:10px; display:none;">0</span>
+          </button>
+          <button class="filter-btn" onclick="setFilter('awaiting_customer', this)">
+            💬 بانتظار الزبون <span id="awaitingCustomerBadge" style="background:#0284c7; color:white; padding:1px 6px; border-radius:10px; font-size:10px; display:none;">0</span>
           </button>
           <button class="filter-btn" onclick="setFilter('all', this)">الكل</button>
-          <button class="filter-btn" onclick="setFilter('replied', this)">تم الرد</button>
+          <button class="filter-btn" onclick="setFilter('replied', this)">مكتملة</button>
           <button class="filter-btn" onclick="setFilter('manual', this)">يدوي</button>
         </div>
         <div style="font-size:11px; color:#38bdf8; display:flex; justify-content:space-between; align-items:center; padding: 2px 4px;">
@@ -1004,6 +1007,28 @@
 
     let previousPendingCount = -1;
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function formatDisplayPhone(p) {
+      if (!p) return '';
+      const clean = String(p).replace(/[^0-9]/g, '');
+      if (clean.startsWith('967') && clean.length === 12) {
+        return `+967 ${clean.slice(3, 5)} ${clean.slice(5, 8)} ${clean.slice(8)}`;
+      }
+      if (clean.length >= 8) {
+        return `+${clean}`;
+      }
+      return clean;
+    }
+
     async function fetchChats(force = false) {
       try {
         const url = '/api/copilot/chats' + (force ? ('?t=' + Date.now()) : '');
@@ -1011,17 +1036,20 @@
         const chats = await res.json();
         
         const urgentCount = chats.filter(c => c.hasPendingDraft || c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode)).length;
+        const awaitingCount = chats.filter(c => c.status === 'waiting_customer' || (c.lastMessageFrom === 'me' && !c.hasPendingDraft && !c.isUnreplied && !c.manualMode)).length;
+        
         if (urgentCount > previousPendingCount && previousPendingCount >= 0) {
           playChime();
         }
         previousPendingCount = urgentCount;
 
         allChats = chats;
-        document.getElementById('totalChatsCount').textContent = `(إجمالي المحادثات: ${chats.length})`;
+        document.getElementById('totalChatsCount').textContent = `(إجمالي: ${chats.length})`;
 
         const alertBanner = document.getElementById('urgentAlertBanner');
         const alertText = document.getElementById('urgentAlertText');
         const pBadge = document.getElementById('pendingBadge');
+        const aBadge = document.getElementById('awaitingCustomerBadge');
         if (urgentCount > 0) {
           if (alertBanner) alertBanner.style.display = 'flex';
           if (alertText) alertText.textContent = `يوجد ${urgentCount} عميل بانتظار الرد عليهم فوراً!`;
@@ -1032,6 +1060,15 @@
         } else {
           if (alertBanner) alertBanner.style.display = 'none';
           if (pBadge) pBadge.style.display = 'none';
+        }
+
+        if (aBadge) {
+          if (awaitingCount > 0) {
+            aBadge.textContent = awaitingCount;
+            aBadge.style.display = 'inline-block';
+          } else {
+            aBadge.style.display = 'none';
+          }
         }
 
         renderChats();
@@ -1056,8 +1093,12 @@
       let filtered = allChats.filter(c => {
         const isDismissed = c.dismissedAt && Date.now() < c.dismissedAt;
         const isUrgent = c.hasPendingDraft || c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode);
+        const isAwaitingCust = c.status === 'waiting_customer' || (c.lastMessageFrom === 'me' && !isUrgent && !c.manualMode);
         if (currentFilter === 'pending') {
           return isUrgent && !isDismissed;
+        }
+        if (currentFilter === 'awaiting_customer') {
+          return isAwaitingCust;
         }
         if (currentFilter === 'replied') return c.status === 'replied' && !isUrgent;
         if (currentFilter === 'manual') return c.manualMode;
@@ -1067,42 +1108,54 @@
       if (search) {
         filtered = filtered.filter(c => 
           c.phone.includes(search) || 
+          (c.formattedPhone && c.formattedPhone.includes(search)) ||
+          (c.contactName && c.contactName.toLowerCase().includes(search)) ||
           (c.name && c.name.toLowerCase().includes(search)) ||
           (c.lastMessage && c.lastMessage.toLowerCase().includes(search))
         );
       }
 
       if (filtered.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding:30px; color:#64748b; font-size:13px;">لا توجد محادثات مطابقة</div>';
+        container.innerHTML = '<div style="text-align:center; padding:30px; color:#64748b; font-size:13px;">لا توجد محادثات في هذا القسم</div>';
         return;
       }
 
       container.innerHTML = filtered.map(c => {
         const isActive = c.phone === activePhone ? 'active' : '';
+        const isUrgent = c.hasPendingDraft || c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode);
         let tagHtml = '';
         if (c.hasPendingDraft) {
           tagHtml = '<span class="status-tag tag-pending">🔴 مسودة للموافقة</span>';
-        } else if (c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode)) {
+        } else if (isUrgent) {
           tagHtml = '<span class="status-tag" style="background:#b91c1c; color:white; animation: pulse 1.5s infinite;">⏳ عميل ينتظر الرد</span>';
+        } else if (c.status === 'waiting_customer' || (c.lastMessageFrom === 'me' && !c.manualMode)) {
+          tagHtml = '<span class="status-tag" style="background:#0284c7; color:white;">💬 أرسلنا له</span>';
         } else if (c.manualMode) {
           tagHtml = '<span class="status-tag tag-manual">👤 إشراف يدوي</span>';
         } else if (c.status === 'replied') {
-          tagHtml = '<span class="status-tag tag-replied">✅ تم الرد</span>';
+          tagHtml = '<span class="status-tag tag-replied">✅ مكتملة</span>';
         }
 
         const timeStr = c.lastMessageTimestamp ? new Date(c.lastMessageTimestamp).toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit' }) : '';
-        const displayName = c.name || ('+ ' + c.phone);
+        const phoneFormatted = c.formattedPhone || formatDisplayPhone(c.phone);
+        
+        let titleHtml = '';
+        if (c.contactName && c.contactName.trim()) {
+          titleHtml = `<span style="font-weight:700; color:#f8fafc;">${escapeHtml(c.contactName)}</span> <span style="font-size:12px; color:#38bdf8; font-weight:normal; margin-right:4px;">(${phoneFormatted})</span>`;
+        } else {
+          titleHtml = `<span style="font-weight:700; color:#38bdf8; font-family:monospace; direction:ltr; unicode-bidi:embed;">${phoneFormatted}</span>`;
+        }
 
         return `
           <div class="chat-item ${isActive}" onclick="selectChat('${c.phone}')">
             <div class="avatar">👤</div>
             <div class="chat-details">
               <div class="chat-top-row">
-                <div class="chat-name">${displayName}</div>
+                <div class="chat-name">${titleHtml}</div>
                 <div class="chat-time">${timeStr}</div>
               </div>
               <div class="chat-bottom-row">
-                <div class="chat-snippet">${c.lastMessage || 'بدء المحادثة...'}</div>
+                <div class="chat-snippet">${escapeHtml(c.lastMessage || 'بدء المحادثة...')}</div>
                 ${tagHtml}
               </div>
             </div>
@@ -1132,8 +1185,13 @@
         const data = await res.json();
         
         document.getElementById('chatHeader').style.display = 'flex';
-        document.getElementById('activeChatName').textContent = data.name || 'عميل تَلِيد';
-        document.getElementById('activeChatPhone').textContent = '+ ' + data.phone;
+        if (data.contactName && data.contactName.trim()) {
+          document.getElementById('activeChatName').textContent = data.contactName.trim();
+          document.getElementById('activeChatPhone').textContent = data.formattedPhone || ('+' + data.phone);
+        } else {
+          document.getElementById('activeChatName').textContent = data.formattedPhone || ('+' + data.phone);
+          document.getElementById('activeChatPhone').textContent = '+' + data.phone;
+        }
 
         const manualBtn = document.getElementById('btnManualMode');
         if (data.manualMode) {

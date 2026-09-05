@@ -2081,25 +2081,95 @@ app.get('/copilot', (req, res) => {
   }
 });
 
+// ==============================================================================
+// إدارة جهات الاتصال وتنسيق الأسماء والأرقام (Contact Names & Clean Phone Formatting)
+// ==============================================================================
+let contactsMap = {};
+function loadContactsMap() {
+  try {
+    const contactsPath = path.join(__dirname, 'contacts.json');
+    if (fs.existsSync(contactsPath)) {
+      const arr = JSON.parse(fs.readFileSync(contactsPath, 'utf8'));
+      if (Array.isArray(arr)) {
+        arr.forEach(c => {
+          if (c.phone) {
+            const clean = String(c.phone).replace(/[^0-9]/g, '');
+            if (c.name && c.name.trim()) {
+              contactsMap[clean] = c.name.trim();
+            }
+          }
+        });
+      }
+      console.log(`[Contacts] Loaded ${Object.keys(contactsMap).length} named contacts from contacts.json`);
+    }
+  } catch(e) {
+    console.warn('[Contacts] Could not load contacts.json:', e.message);
+  }
+}
+loadContactsMap();
+
+function formatPhoneNumber(phone) {
+  if (!phone) return '';
+  const clean = String(phone).replace(/[^0-9]/g, '');
+  if (clean.startsWith('967') && clean.length === 12) {
+    return `+967 ${clean.slice(3, 5)} ${clean.slice(5, 8)} ${clean.slice(8)}`;
+  }
+  if (clean.length >= 8) {
+    return `+${clean}`;
+  }
+  return clean;
+}
+
+function resolveContactName(phone, storedName) {
+  const clean = String(phone).replace(/[^0-9]/g, '');
+  if (storedName && storedName.trim() && !storedName.startsWith('عميل')) {
+    return storedName.trim();
+  }
+  if (contactsMap[clean]) {
+    return contactsMap[clean];
+  }
+  return null;
+}
+
 // قائمة المحادثات لـ Copilot
 app.get('/api/copilot/chats', (req, res) => {
-  const list = Object.entries(chatStore).map(([phone, c]) => {
-    const isUnreplied = c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode;
-    return {
-      phone,
-      name: c.name || `عميل (${phone.slice(-4)})`,
-      lastMessage: c.lastMessage || '',
-      lastMessageFrom: c.lastMessageFrom || 'contact',
-      lastMessageTimestamp: c.lastMessageTimestamp || Date.now(),
-      replyCount: c.replyCount || 0,
-      manualMode: !!c.manualMode,
-      hasPendingDraft: !!c.pendingDraft,
-      isUnreplied: isUnreplied,
-      pendingDraft: c.pendingDraft?.text || null,
-      status: c.pendingDraft ? 'pending_approval' : (isUnreplied ? 'waiting_reply' : (c.replied ? 'replied' : 'waiting_reply')),
-      dismissedAt: c.dismissedAt || null
-    };
-  });
+  const list = Object.entries(chatStore)
+    .filter(([phone]) => phone !== '967770000001') // استبعاد رقم الاختبار الوهمي
+    .map(([phone, c]) => {
+      const cleanPhone = String(phone).replace(/[^0-9]/g, '');
+      const isUnreplied = c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode;
+      const formattedPhone = formatPhoneNumber(cleanPhone);
+      const contactName = resolveContactName(cleanPhone, c.name);
+      const displayName = contactName ? `${contactName} (${formattedPhone})` : formattedPhone;
+
+      let chatStatus = 'replied';
+      if (c.pendingDraft) {
+        chatStatus = 'pending_approval';
+      } else if (isUnreplied) {
+        chatStatus = 'waiting_our_reply';
+      } else if (c.lastMessageFrom === 'me' && (c.replyCount === 0 || !c.replied)) {
+        chatStatus = 'waiting_customer';
+      } else if (c.manualMode) {
+        chatStatus = 'manual';
+      }
+
+      return {
+        phone: cleanPhone,
+        formattedPhone,
+        contactName,
+        name: displayName,
+        lastMessage: c.lastMessage || '',
+        lastMessageFrom: c.lastMessageFrom || 'contact',
+        lastMessageTimestamp: c.lastMessageTimestamp || Date.now(),
+        replyCount: c.replyCount || 0,
+        manualMode: !!c.manualMode,
+        hasPendingDraft: !!c.pendingDraft,
+        isUnreplied: isUnreplied,
+        pendingDraft: c.pendingDraft?.text || null,
+        status: chatStatus,
+        dismissedAt: c.dismissedAt || null
+      };
+    });
 
   // فرز ذكي: المحادثات التي لديها مسودة أو عميل ينتظر الرد أولاً، ثم حسب آخر رسالة
   list.sort((a, b) => {
@@ -2117,12 +2187,26 @@ app.get('/api/copilot/chats', (req, res) => {
 app.get('/api/copilot/chat/:phone', (req, res) => {
   const clean = String(req.params.phone).replace(/[^0-9]/g, '');
   const c = chatStore[clean];
+  const formattedPhone = formatPhoneNumber(clean);
+  const contactName = c ? resolveContactName(clean, c.name) : (contactsMap[clean] || null);
+  const displayName = contactName ? `${contactName} (${formattedPhone})` : formattedPhone;
+
   if (!c) {
-    return res.json({ phone: clean, name: 'عميل جديد', history: [], pendingDraft: null, manualMode: false });
+    return res.json({
+      phone: clean,
+      formattedPhone,
+      contactName,
+      name: displayName,
+      history: [],
+      pendingDraft: null,
+      manualMode: false
+    });
   }
   res.json({
     phone: clean,
-    name: c.name || `عميل (${clean.slice(-4)})`,
+    formattedPhone,
+    contactName,
+    name: displayName,
     history: c.history || [],
     pendingDraft: c.pendingDraft || null,
     manualMode: !!c.manualMode,
@@ -2362,14 +2446,17 @@ app.post('/api/copilot/mode', async (req, res) => {
 
 // إحصائيات لوحة التحكم
 app.get('/api/copilot/stats', (req, res) => {
-  const pendingCount = Object.values(chatStore).filter(c => c.pendingDraft).length;
-  const unrepliedCount = Object.values(chatStore).filter(c => c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode).length;
+  const chatsList = Object.entries(chatStore).filter(([p]) => p !== '967770000001');
+  const pendingCount = chatsList.filter(([p, c]) => c.pendingDraft).length;
+  const unrepliedCount = chatsList.filter(([p, c]) => c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode).length;
+  const waitingCustomerCount = chatsList.filter(([p, c]) => c.lastMessageFrom === 'me' && !c.pendingDraft && (c.replyCount === 0 || !c.replied)).length;
   res.json({
     systemMode: SYSTEM_MODE,
     whatsappConnected: sessionStatus['admin_instance_1'] === 'connected',
-    totalChats: Object.keys(chatStore).length,
+    totalChats: chatsList.length,
     pendingApprovals: pendingCount,
     unrepliedCount: unrepliedCount,
+    waitingCustomerCount: waitingCustomerCount,
     learningRulesCount: aiLearningMemory.length
   });
 });
