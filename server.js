@@ -878,11 +878,12 @@ async function startSession(sessionId) {
   }
 
   // استخدام مهايئ المصادقة السحابي من Supabase لضمان بقاء الجلسة للأبد
-  let state, saveCreds;
+  let state, saveCreds, flushKeys;
   try {
     const sbAuth = await useSupabaseAuthState(supabaseQuery, sessionId);
     state = sbAuth.state;
     saveCreds = sbAuth.saveCreds;
+    flushKeys = sbAuth.flushKeys;
     console.log(`[${sessionId}] ☁️ Using persistent Supabase Cloud Auth State!`);
   } catch (e) {
     console.warn(`[${sessionId}] Falling back to filesystem auth:`, e.message);
@@ -899,7 +900,7 @@ async function startSession(sessionId) {
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
-    browser: Browsers.windows('Desktop'),
+    browser: Browsers.ubuntu('Chrome'),
     syncFullHistory: false,
     markOnlineOnConnect: true,
     keepAliveIntervalMs: 25000,
@@ -956,6 +957,9 @@ async function startSession(sessionId) {
       disconnectCount[sessionId] = 0;
       sessionStatus[sessionId] = 'connected';
       sessionQr[sessionId] = null;
+      if (flushKeys) {
+        flushKeys().catch(e => console.error('[SupabaseAuth] Flush keys on open error:', e.message));
+      }
       const userPhone = sock.user?.id?.split(':')[0] || 'Unknown';
       console.log(`[${sessionId}] 🟢 Connected successfully as +${userPhone} (Cloud Persisted)!`);
       
