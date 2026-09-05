@@ -732,6 +732,9 @@
           </div>
         </div>
         <div class="chat-actions">
+          <button class="btn-success-outline" onclick="promptRecordClientMessage()" style="background:#065f46; color:#34d399; border:1px solid #059669; padding:6px 12px; border-radius:8px; cursor:pointer; font-family:Cairo; font-size:12px; font-weight:bold;" title="تسجيل رسالة وردتك من الزبون في واتساب لتوليد رد ذكي فوري عليها">
+            📥 تسجيل رد الزبون
+          </button>
           <button id="btnManualMode" class="btn-dismiss" onclick="toggleManualMode()" title="إيقاف الذكاء الاصطناعي للرد بنفسك">
             👤 إشراف يدوي
           </button>
@@ -1368,6 +1371,28 @@
           fetchChats();
         }
       } catch(e){ alert('خطأ: ' + e.message); }
+    }
+
+    async function promptRecordClientMessage() {
+      if (!activePhone) {
+        alert('يرجى اختيار محادثة أولاً لتسجيل رسالة الزبون لها');
+        return;
+      }
+      const msg = prompt(`اكتب نص الرسالة التي أرسلها الزبون (+${activePhone}) في الواتساب:`);
+      if (!msg || !msg.trim()) return;
+      try {
+        const res = await fetch('/api/chat-store/record-and-reply', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: activePhone, message: msg.trim() })
+        });
+        const data = await res.json();
+        showNotificationToast('📥 تم تسجيل رسالة الزبون! جاري تجهيز الرد الذكي فوراً...');
+        await fetchChats(true);
+        await loadActiveChat(activePhone, true);
+      } catch(e) {
+        alert('خطأ أثناء تسجيل الرسالة: ' + e.message);
+      }
     }
 
     async function toggleManualMode() {
