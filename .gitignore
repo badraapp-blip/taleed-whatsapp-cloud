@@ -1,0 +1,7 @@
+﻿node_modules/
+auth_sessions/
+cloudflared.exe
+*.log
+.env
+.DS_Store
+qr_admin_*.png

@@ -1,0 +1,707 @@
+{
+  "4265170989125": {
+    "phone": "4265170989125",
+    "manualMode": true,
+    "replied": true,
+    "lastMessageFrom": "me",
+    "lastMessage": "محادثة يدوية خاصة",
+    "lastMessageTimestamp": 1788557753218,
+    "replyCount": 0,
+    "history": []
+  },
+  "96143346258147": {
+    "phone": "96143346258147",
+    "manualMode": true,
+    "replied": true,
+    "lastMessageFrom": "me",
+    "lastMessage": "محادثة يدوية خاصة",
+    "lastMessageTimestamp": 1788557753218,
+    "replyCount": 0,
+    "history": []
+  },
+  "43504344527015": {
+    "phone": "43504344527015",
+    "manualMode": true,
+    "replied": true,
+    "lastMessageFrom": "me",
+    "lastMessage": "محادثة يدوية خاصة",
+    "lastMessageTimestamp": 1788557753218,
+    "replyCount": 0,
+    "history": []
+  },
+  "236678920859903": {
+    "phone": "236678920859903",
+    "manualMode": true,
+    "replied": true,
+    "lastMessageFrom": "me",
+    "lastMessage": "محادثة يدوية خاصة",
+    "lastMessageTimestamp": 1788557753218,
+    "replyCount": 0,
+    "history": []
+  },
+  "105257182965960": {
+    "phone": "105257182965960",
+    "manualMode": true,
+    "replied": true,
+    "lastMessageFrom": "me",
+    "lastMessage": "محادثة يدوية خاصة",
+    "lastMessageTimestamp": 1788557753218,
+    "replyCount": 0,
+    "history": []
+  },
+  "94914582970618": {
+    "phone": "94914582970618",
+    "manualMode": true,
+    "replied": true,
+    "lastMessageFrom": "me",
+    "lastMessage": "محادثة يدوية خاصة",
+    "lastMessageTimestamp": 1788557753218,
+    "replyCount": 0,
+    "history": []
+  },
+  "262366835040429": {
+    "phone": "262366835040429",
+    "manualMode": true,
+    "replied": true,
+    "lastMessageFrom": "me",
+    "lastMessage": "محادثة يدوية خاصة",
+    "lastMessageTimestamp": 1788557753218,
+    "replyCount": 0,
+    "history": []
+  },
+  "967770000001": {
+    "phone": "967770000001",
+    "remoteJid": "967770000001@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "?????? ?????? ????? ??? ????? ??????",
+    "lastMessageFrom": "contact",
+    "lastMessageTimestamp": 1788592948628,
+    "replied": false,
+    "replyCount": 0,
+    "history": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "?????? ????? ??? ????? ?? ??????"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "?????? ?????? ????? ??? ????? ??????"
+          }
+        ]
+      }
+    ],
+    "pendingDraft": {
+      "text": "حياك الله يا غالي، المعذرة منك الرسالة طالعة عندنا برموز غير واضحة. ياليت تعيد إرسال استفسارك وأبشر بعزك بنخدمك بعيوننا 🌿",
+      "originalDraft": "حياك الله يا غالي، المعذرة منك الرسالة طالعة عندنا برموز غير واضحة. ياليت تعيد إرسال استفسارك وأبشر بعزك بنخدمك بعيوننا 🌿",
+      "timestamp": 1788596514007
+    },
+    "status": "pending_approval"
+  },
+  "120413803835395": {
+    "phone": "120413803835395",
+    "remoteJid": "120413803835395@lid",
+    "name": "",
+    "lastMessage": "على راسي يا غالي والسموحة منك، نلتزم بشروطكم.. ونحن بخدمتك بأي وقت لتوفير أجود الأعلاف لحلالك بسيئون وبأسهل طريقة 🌿",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788596501874,
+    "replied": true,
+    "replyCount": 2,
+    "manualMode": true,
+    "history": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "يمنع مشر الروابط يالغالي انشر اعلانك بدون روابط"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "عفوا عفوا طيب لو اعلاني في تطبيق  ب يريحك كثير"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "عفوا عفوا طيب لو اعلاني في تطبيق  ب يريحك كثير"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "اني من فريق تسويق بذرة"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "فكرتنا انه تبعك و جهدك في ان تاكل اغنامك و تروح و ترجع هذه جدا مرهقه و خرجنا لك ب حل ب ضغطه زر"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "و اول اشخاص يدخلو على القناه و يحملو التطبيق بيحصلو على خصم يوصل الي50%"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "لو يوم الثلاثا بتشتري برسيمك ب 10000 انا ب وفر لك يمكن مايقارب ال5000"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "لو كنت محظوظ طبعا"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "و طبعا أبشر على راسي يا غالي والسموحة منك، نلتزم بشروطكم. وتطبيق تَلِيد في خدمتكم لأجود الأعلاف بسيئون بأي وقت 🌿"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "و طبعا أبشر على راسي يا غالي والسموحة منك، نلتزم بشروطكم. وتطبيق تَلِيد في خدمتكم لأجود الأعلاف بسيئون بأي وقت 🌿"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "على راسي يا غالي والسموحة منك، نلتزم بشروطكم.. ونحن بخدمتك بأي وقت لتوفير أجود الأعلاف لحلالك بسيئون وبأسهل طريقة 🌿"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "على راسي يا غالي والسموحة منك، نلتزم بشروطكم.. ونحن بخدمتك بأي وقت لتوفير أجود الأعلاف لحلالك بسيئون وبأسهل طريقة 🌿"
+          }
+        ]
+      }
+    ],
+    "status": "pending_approval",
+    "dismissedAt": 1788596586833
+  },
+  "191426843385954": {
+    "phone": "191426843385954",
+    "remoteJid": "191426843385954@lid",
+    "name": "",
+    "lastMessage": ".\n📌 ملخص البيانات الدائمة للرجوع إليها:\nرمز الدخول للوحة (PIN): 1234\nرابط اللوحة السحابي المباشر الحالي للجوال:\n👉 https://centuries-handhelds-perth-booth.trycloudflare.com/copilot\nرابط اللابتوب المحلي: http://localhost:3000/copilot",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598106646,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": true,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": ".\n📌 ملخص البيانات الدائمة للرجوع إليها:\nرمز الدخول للوحة (PIN): 1234\nرابط اللوحة السحابي المباشر الحالي للجوال:\n👉 https://centuries-handhelds-perth-booth.trycloudflare.com/copilot\nرابط اللابتوب المحلي: http://localhost:3000/copilot"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": ".\n📌 ملخص البيانات الدائمة للرجوع إليها:\nرمز الدخول للوحة (PIN): 1234\nرابط اللوحة السحابي المباشر الحالي للجوال:\n👉 https://centuries-handhelds-perth-booth.trycloudflare.com/copilot\nرابط اللابتوب المحلي: http://localhost:3000/copilot"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": ".\n📌 ملخص البيانات الدائمة للرجوع إليها:\nرمز الدخول للوحة (PIN): 1234\nرابط اللوحة السحابي المباشر الحالي للجوال:\n👉 https://centuries-handhelds-perth-booth.trycloudflare.com/copilot\nرابط اللابتوب المحلي: http://localhost:3000/copilot"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": ".\n📌 ملخص البيانات الدائمة للرجوع إليها:\nرمز الدخول للوحة (PIN): 1234\nرابط اللوحة السحابي المباشر الحالي للجوال:\n👉 https://centuries-handhelds-perth-booth.trycloudflare.com/copilot\nرابط اللابتوب المحلي: http://localhost:3000/copilot"
+          }
+        ]
+      }
+    ]
+  },
+  "967783472642": {
+    "phone": "967783472642",
+    "remoteJid": "967783472642@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "أمورك طيبة إن شاء الله يا فرج؟ طمنا عنك",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788597470096,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "هلا والله، مساك الله بالخير"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "أمورك طيبة إن شاء الله يا فرج؟ طمنا عنك"
+          }
+        ]
+      }
+    ]
+  },
+  "967783480323": {
+    "phone": "967783480323",
+    "remoteJid": "967783480323@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "يا بو حسن، كيف حالك وكيف الشغل والأمور؟",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788597740298,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "أهلاً وسهلاً، مساك الله بالخير والسرور"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "يا بو حسن، كيف حالك وكيف الشغل والأمور؟"
+          }
+        ]
+      }
+    ]
+  },
+  "967783560830": {
+    "phone": "967783560830",
+    "remoteJid": "967783560830@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "أمورك طيبة إن شاء الله يا صالح؟ طمنا عنك",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598031824,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "السلام عليكم"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "أمورك طيبة إن شاء الله يا صالح؟ طمنا عنك"
+          }
+        ]
+      }
+    ]
+  },
+  "967783729739": {
+    "phone": "967783729739",
+    "remoteJid": "967783729739@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "شلونك يا صالح طمني عنك، عساك بأحسن حال وصحة؟",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598065495,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "السلام عليكم ورحمة الله"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "شلونك يا صالح طمني عنك، عساك بأحسن حال وصحة؟"
+          }
+        ]
+      }
+    ]
+  },
+  "967784662373": {
+    "phone": "967784662373",
+    "remoteJid": "967784662373@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "طولت الغيبة يا يسلم، طمني عنك كيف أمورك؟",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598132995,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "مرحبا، مساك الله بالنور والعافية"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "طولت الغيبة يا يسلم، طمني عنك كيف أمورك؟"
+          }
+        ]
+      }
+    ]
+  },
+  "967785074755": {
+    "phone": "967785074755",
+    "remoteJid": "967785074755@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "يا بو سعيد، كيف حالك وكيف الشغل والأمور؟",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598214603,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "مرحبا، مساك الله بالنور والعافية"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "يا بو سعيد، كيف حالك وكيف الشغل والأمور؟"
+          }
+        ]
+      }
+    ]
+  },
+  "96898812429": {
+    "phone": "96898812429",
+    "remoteJid": "96898812429@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "هلا يا حسن، كيف صحتك وشلون الأهل والعيال؟ طمني عنك",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598272389,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "هلا والله، مساك الله بالخير"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "هلا يا حسن، كيف صحتك وشلون الأهل والعيال؟ طمني عنك"
+          }
+        ]
+      }
+    ]
+  },
+  "97450954545": {
+    "phone": "97450954545",
+    "remoteJid": "97450954545@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "هلا يا سالم، كيف صحتك وشلون الأهل والعيال؟ طمني عنك",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598351903,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "السلام عليكم"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "هلا يا سالم، كيف صحتك وشلون الأهل والعيال؟ طمني عنك"
+          }
+        ]
+      }
+    ]
+  },
+  "72559697637447": {
+    "phone": "72559697637447",
+    "remoteJid": "72559697637447@lid",
+    "name": "",
+    "lastMessage": "المعذرة منك يا غالي.. معك فريق خدمة عملاء تطبيق تَلِيد لخدمات وتوصيل الأعلاف بسيئون.\n\nحبينا نسألك بس: هل عندك أغنام أو مواشي؟ 🌿",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598560448,
+    "replied": true,
+    "replyCount": 1,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "من الاخ"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "المعذرة منك يا غالي.. معك فريق خدمة عملاء تطبيق تَلِيد لخدمات وتوصيل الأعلاف بسيئون.\n\nحبينا نسألك بس: هل عندك أغنام أو مواشي؟ 🌿"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "المعذرة منك يا غالي.. معك فريق خدمة عملاء تطبيق تَلِيد لخدمات وتوصيل الأعلاف بسيئون.\n\nحبينا نسألك بس: هل عندك أغنام أو مواشي؟ 🌿"
+          }
+        ]
+      }
+    ],
+    "status": "pending_approval",
+    "dismissedAt": 1788598649812
+  },
+  "967772171399": {
+    "phone": "967772171399",
+    "remoteJid": "967772171399@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "هلا يا عمر، كيف صحتك وشلون الأهل والعيال؟ طمني عنك",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598421795,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "مرحبا، مساك الله بالنور والعافية"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "هلا يا عمر، كيف صحتك وشلون الأهل والعيال؟ طمني عنك"
+          }
+        ]
+      }
+    ]
+  },
+  "208486503846103": {
+    "phone": "208486503846103",
+    "remoteJid": "208486503846103@lid",
+    "name": "",
+    "lastMessage": "الله يبارك لك ويحفظك يا غالي، إذا تعرف أحد من أصحابك أو أقاربك عنده حلال بسيئون،  تقدر ترشده في هذا القناه ب تفيده كثير خصومات عروضات توصيل ل البيت بدون اي تعب بتوكن تربيته ل الاغنام و مشكور على تعاونك معانا 🌿",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598795384,
+    "replied": true,
+    "replyCount": 2,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "وعليكم السلام"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "الحمدلله بخير"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "من معي"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "وعليكم السلام"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "أدام الله عليك الخير والفيض يا غالي.. معك فريق خدمة عملاء تطبيق \"تَلِيد\" لخدمات وتوصيل الأعلاف بسيئون.\n\nحبينا نسألك بس: هل عندك أغنام أو مواشي بالبيت أو المزرعة؟ 🌿"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "أدام الله عليك الخير والفيض يا غالي.. معك فريق خدمة عملاء تطبيق \"تَلِيد\" لخدمات وتوصيل الأعلاف بسيئون.\n\nحبينا نسألك بس: هل عندك أغنام أو مواشي بالبيت أو المزرعة؟ 🌿"
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text": "لا ماعندي"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "الله يبارك لك ويحفظك يا غالي، إذا تعرف أحد من أصحابك أو أقاربك عنده حلال بسيئون،  تقدر ترشده في هذا القناه ب تفيده كثير خصومات عروضات توصيل ل البيت بدون اي تعب بتوكن تربيته ل الاغنام و مشكور على تعاونك معانا 🌿"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "الله يبارك لك ويحفظك يا غالي، إذا تعرف أحد من أصحابك أو أقاربك عنده حلال بسيئون،  تقدر ترشده في هذا القناه ب تفيده كثير خصومات عروضات توصيل ل البيت بدون اي تعب بتوكن تربيته ل الاغنام و مشكور على تعاونك معانا 🌿"
+          }
+        ]
+      }
+    ],
+    "status": "pending_approval",
+    "dismissedAt": 1788598884505
+  },
+  "967772580721": {
+    "phone": "967772580721",
+    "remoteJid": "967772580721@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "أمورك طيبة إن شاء الله يا أبو؟ طمنا عنك",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598516447,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "السلام عليكم"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "أمورك طيبة إن شاء الله يا أبو؟ طمنا عنك"
+          }
+        ]
+      }
+    ]
+  },
+  "967770260123": {
+    "phone": "967770260123",
+    "remoteJid": "967770260123@s.whatsapp.net",
+    "name": "",
+    "lastMessage": "يا فهد، عساك على القوة وبأتم صحة وعافية؟",
+    "lastMessageFrom": "me",
+    "lastMessageTimestamp": 1788598634845,
+    "replied": true,
+    "replyCount": 0,
+    "manualMode": false,
+    "history": [
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "السلام عليكم ورحمة الله"
+          }
+        ]
+      },
+      {
+        "role": "model",
+        "parts": [
+          {
+            "text": "يا فهد، عساك على القوة وبأتم صحة وعافية؟"
+          }
+        ]
+      }
+    ]
+  }
+}
