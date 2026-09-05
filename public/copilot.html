@@ -306,6 +306,87 @@
       50% { opacity: 0.6; }
     }
 
+    /* Clean Phone Isolation & Monospace Font */
+    .clean-phone {
+      direction: ltr !important;
+      unicode-bidi: isolate !important;
+      font-family: 'Consolas', 'Courier New', monospace;
+      display: inline-block;
+      letter-spacing: 0.5px;
+    }
+
+    /* Open New Chat Button */
+    .btn-open-chat {
+      background: #00a884;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+      transition: background 0.2s;
+      user-select: none;
+    }
+    .btn-open-chat:hover {
+      background: #029474;
+    }
+
+    /* Load More Chats Button (Sidebar) */
+    .btn-load-more {
+      width: calc(100% - 24px);
+      margin: 12px auto;
+      padding: 10px;
+      background: #1f2c34;
+      border: 1px solid #374151;
+      color: #38bdf8;
+      border-radius: 8px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-load-more:hover {
+      background: #2a3942;
+      color: #7dd3fc;
+      border-color: #0284c7;
+    }
+
+    /* Load More Messages Button (Top of Chat) */
+    .btn-load-more-messages {
+      align-self: center;
+      padding: 7px 16px;
+      background: #1f2c34;
+      border: 1px solid #374151;
+      color: #38bdf8;
+      border-radius: 20px;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    }
+    .btn-load-more-messages:hover {
+      background: #2a3942;
+      color: #7dd3fc;
+      border-color: #38bdf8;
+    }
+
     /* Right Main Panel: Active Chat & Copilot Draft */
     .chat-panel {
       flex: 1;
@@ -690,18 +771,24 @@
     <!-- Sidebar: Chats List -->
     <aside id="sidebar" class="sidebar">
       <div class="sidebar-header">
-        <div class="search-box">
-          <span>🔍</span>
-          <input type="text" id="searchInput" class="search-input" placeholder="بحث برقم الهاتف أو الاسم..." oninput="renderChats()">
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+          <div class="search-box" style="flex: 1;">
+            <span>🔍</span>
+            <input type="text" id="searchInput" class="search-input" placeholder="بحث برقم الهاتف أو الاسم..." oninput="onSearchInput()">
+          </div>
+          <button class="btn-open-chat" onclick="promptOpenNewChat()" title="مراسلة أو فتح شات جديد مع أي رقم">
+            <span>➕</span>
+            <span>رقم جديد</span>
+          </button>
         </div>
         <div class="filter-tabs">
-          <button class="filter-btn active" onclick="setFilter('pending', this)">
+          <button class="filter-btn active" onclick="setFilter('all', this)">📱 الكل (أحدث 10)</button>
+          <button class="filter-btn" onclick="setFilter('pending', this)">
             🔴 بانتظار ردنا <span id="pendingBadge" style="background:#dc2626; color:white; padding:1px 6px; border-radius:10px; font-size:10px; display:none;">0</span>
           </button>
           <button class="filter-btn" onclick="setFilter('awaiting_customer', this)">
-            💬 بانتظار الزبون <span id="awaitingCustomerBadge" style="background:#0284c7; color:white; padding:1px 6px; border-radius:10px; font-size:10px; display:none;">0</span>
+            💬 أرسلنا له <span id="awaitingCustomerBadge" style="background:#0284c7; color:white; padding:1px 6px; border-radius:10px; font-size:10px; display:none;">0</span>
           </button>
-          <button class="filter-btn" onclick="setFilter('all', this)">الكل</button>
           <button class="filter-btn" onclick="setFilter('replied', this)">مكتملة</button>
           <button class="filter-btn" onclick="setFilter('manual', this)">يدوي</button>
         </div>
@@ -793,7 +880,20 @@
     const CORRECT_PIN = '1234';
     let activePhone = null;
     let allChats = [];
-    let currentFilter = 'pending';
+    let currentFilter = 'all'; // التبويبة الافتراضية هي "الكل (أحدث 10)" مثل واتساب ويب
+    let currentPage = 1;
+    let currentLimit = 10;
+    let hasMoreChats = false;
+    let isLoadingMoreChats = false;
+    let searchTimeout = null;
+
+    // للمحادثة المفتوحة وتاريخ الرسائل
+    let activeChatHistory = [];
+    let activeChatOffset = 0;
+    let activeChatTotalMessages = 0;
+    let hasMoreActiveMessages = false;
+    let isLoadingOlderMessages = false;
+
     let systemMode = 'copilot';
     let originalDraftText = '';
     let sseSource = null;
@@ -1024,7 +1124,13 @@
       if (!p) return '';
       const clean = String(p).replace(/[^0-9]/g, '');
       if (clean.startsWith('967') && clean.length === 12) {
-        return `+967 ${clean.slice(3, 5)} ${clean.slice(5, 8)} ${clean.slice(8)}`;
+        return `+967 ${clean.slice(3, 6)} ${clean.slice(6, 9)} ${clean.slice(9)}`;
+      }
+      if (clean.startsWith('968') && clean.length === 11) {
+        return `+968 ${clean.slice(3, 7)} ${clean.slice(7)}`;
+      }
+      if (clean.startsWith('974') && clean.length === 11) {
+        return `+974 ${clean.slice(3, 7)} ${clean.slice(7)}`;
       }
       if (clean.length >= 8) {
         return `+${clean}`;
@@ -1032,22 +1138,75 @@
       return clean;
     }
 
-    async function fetchChats(force = false) {
+    function onSearchInput() {
+      if (searchTimeout) clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        fetchChats(false, 1, false);
+      }, 300);
+    }
+
+    async function promptOpenNewChat() {
+      const phone = prompt('أدخل رقم هاتف العميل (مثال: 770260123 أو 967770260123):');
+      if (!phone || !phone.trim()) return;
+      const name = prompt('اسم العميل (اختياري):', '') || '';
+
       try {
-        const url = '/api/copilot/chats' + (force ? ('?t=' + Date.now()) : '');
+        const res = await fetch('/api/copilot/open-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: phone.trim(), name: name.trim() })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          alert(data.error || 'فشل فتح المحادثة');
+          return;
+        }
+        showNotificationToast(`✅ تم فتح المحادثة مع ${data.chat.name}`);
+        await fetchChats(true, 1, false);
+        selectChat(data.chat.phone);
+      } catch(e) {
+        alert('حدث خطأ: ' + e.message);
+      }
+    }
+
+    async function fetchChats(force = false, page = 1, append = false) {
+      try {
+        if (page === 1 && !append) {
+          currentPage = 1;
+        }
+        const q = document.getElementById('searchInput')?.value.trim() || '';
+        let url = `/api/copilot/chats?page=${page}&limit=${currentLimit}&filter=${currentFilter}`;
+        if (q) url += `&q=${encodeURIComponent(q)}`;
+        if (force) url += `&t=${Date.now()}`;
+
         const res = await fetch(url);
-        const chats = await res.json();
-        
-        const urgentCount = chats.filter(c => c.hasPendingDraft || c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode)).length;
-        const awaitingCount = chats.filter(c => c.status === 'waiting_customer' || (c.lastMessageFrom === 'me' && !c.hasPendingDraft && !c.isUnreplied && !c.manualMode)).length;
-        
+        const data = await res.json();
+
+        const chatsList = Array.isArray(data) ? data : (data.chats || []);
+        const stats = data.stats || {};
+        const total = data.total !== undefined ? data.total : chatsList.length;
+        hasMoreChats = !!data.hasMore;
+
+        if (append) {
+          allChats = allChats.concat(chatsList);
+        } else {
+          allChats = chatsList;
+        }
+
+        const urgentCount = stats.urgentCount !== undefined 
+          ? stats.urgentCount 
+          : allChats.filter(c => c.hasPendingDraft || c.isUnreplied).length;
+        const awaitingCount = stats.awaitingCount !== undefined 
+          ? stats.awaitingCount 
+          : allChats.filter(c => c.status === 'waiting_customer').length;
+
         if (urgentCount > previousPendingCount && previousPendingCount >= 0) {
           playChime();
         }
         previousPendingCount = urgentCount;
 
-        allChats = chats;
-        document.getElementById('totalChatsCount').textContent = `(إجمالي: ${chats.length})`;
+        const totalReal = stats.totalRealChats !== undefined ? stats.totalRealChats : total;
+        document.getElementById('totalChatsCount').textContent = `(إجمالي: ${totalReal} | معروض: ${allChats.length})`;
 
         const alertBanner = document.getElementById('urgentAlertBanner');
         const alertText = document.getElementById('urgentAlertText');
@@ -1076,54 +1235,43 @@
 
         renderChats();
 
-        if (activePhone) {
+        if (activePhone && !append) {
           loadActiveChat(activePhone, false);
         }
-      } catch(e){}
+      } catch(e){
+        console.error('[fetchChats error]:', e);
+      }
+    }
+
+    async function loadMoreChats() {
+      if (isLoadingMoreChats || !hasMoreChats) return;
+      isLoadingMoreChats = true;
+      const btn = document.getElementById('btnLoadMoreChats');
+      if (btn) btn.innerHTML = '⏳ جاري تحميل 10 محادثات إضافية...';
+      try {
+        currentPage++;
+        await fetchChats(false, currentPage, true);
+      } finally {
+        isLoadingMoreChats = false;
+      }
     }
 
     function setFilter(filter, el) {
       currentFilter = filter;
       document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
       if (el) el.classList.add('active');
-      renderChats();
+      fetchChats(false, 1, false);
     }
 
     function renderChats() {
-      const search = document.getElementById('searchInput').value.trim().toLowerCase();
       const container = document.getElementById('chatListContainer');
-      
-      let filtered = allChats.filter(c => {
-        const isDismissed = c.dismissedAt && Date.now() < c.dismissedAt;
-        const isUrgent = c.hasPendingDraft || c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode);
-        const isAwaitingCust = c.status === 'waiting_customer' || (c.lastMessageFrom === 'me' && !isUrgent && !c.manualMode);
-        if (currentFilter === 'pending') {
-          return isUrgent && !isDismissed;
-        }
-        if (currentFilter === 'awaiting_customer') {
-          return isAwaitingCust;
-        }
-        if (currentFilter === 'replied') return c.status === 'replied' && !isUrgent;
-        if (currentFilter === 'manual') return c.manualMode;
-        return true;
-      });
 
-      if (search) {
-        filtered = filtered.filter(c => 
-          c.phone.includes(search) || 
-          (c.formattedPhone && c.formattedPhone.includes(search)) ||
-          (c.contactName && c.contactName.toLowerCase().includes(search)) ||
-          (c.name && c.name.toLowerCase().includes(search)) ||
-          (c.lastMessage && c.lastMessage.toLowerCase().includes(search))
-        );
-      }
-
-      if (filtered.length === 0) {
+      if (allChats.length === 0) {
         container.innerHTML = '<div style="text-align:center; padding:30px; color:#64748b; font-size:13px;">لا توجد محادثات في هذا القسم</div>';
         return;
       }
 
-      container.innerHTML = filtered.map(c => {
+      const chatsHtml = allChats.map(c => {
         const isActive = c.phone === activePhone ? 'active' : '';
         const isUrgent = c.hasPendingDraft || c.isUnreplied || (c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode);
         let tagHtml = '';
@@ -1144,9 +1292,9 @@
         
         let titleHtml = '';
         if (c.contactName && c.contactName.trim()) {
-          titleHtml = `<span style="font-weight:700; color:#f8fafc;">${escapeHtml(c.contactName)}</span> <span style="font-size:12px; color:#38bdf8; font-weight:normal; margin-right:4px;">(${phoneFormatted})</span>`;
+          titleHtml = `<span style="font-weight:700; color:#f8fafc;">${escapeHtml(c.contactName)}</span> <span style="font-size:12px; color:#38bdf8; font-weight:normal; margin-right:4px;">(<bdi dir="ltr" class="clean-phone">${phoneFormatted}</bdi>)</span>`;
         } else {
-          titleHtml = `<span style="font-weight:700; color:#38bdf8; font-family:monospace; direction:ltr; unicode-bidi:embed;">${phoneFormatted}</span>`;
+          titleHtml = `<bdi dir="ltr" class="clean-phone" style="font-weight:700; color:#38bdf8; font-size:14px;">${phoneFormatted}</bdi>`;
         }
 
         return `
@@ -1165,12 +1313,23 @@
           </div>
         `;
       }).join('');
+
+      let loadMoreHtml = '';
+      if (hasMoreChats) {
+        loadMoreHtml = `
+          <button id="btnLoadMoreChats" class="btn-load-more" onclick="loadMoreChats()">
+            <span>⬇️ عرض 10 محادثات إضافية</span>
+          </button>
+        `;
+      }
+
+      container.innerHTML = chatsHtml + loadMoreHtml;
     }
 
     async function selectChat(phone) {
       activePhone = phone;
       renderChats();
-      await loadActiveChat(phone, true);
+      await loadActiveChat(phone, true, 0, false);
       
       if (window.innerWidth <= 768) {
         document.getElementById('sidebar').classList.add('hidden-mobile');
@@ -1181,19 +1340,21 @@
       document.getElementById('sidebar').classList.remove('hidden-mobile');
     }
 
-    async function loadActiveChat(phone, isFirstSelection = false) {
+    async function loadActiveChat(phone, isFirstSelection = false, offset = 0, isPrepending = false) {
       try {
-        const url = '/api/copilot/chat/' + phone + (isFirstSelection ? ('?t=' + Date.now()) : '');
+        const url = `/api/copilot/chat/${phone}?limit=10&offset=${offset}${isFirstSelection ? '&t=' + Date.now() : ''}`;
         const res = await fetch(url);
         const data = await res.json();
         
         document.getElementById('chatHeader').style.display = 'flex';
+        const phoneFormatted = data.formattedPhone || formatDisplayPhone(data.phone);
+
         if (data.contactName && data.contactName.trim()) {
           document.getElementById('activeChatName').textContent = data.contactName.trim();
-          document.getElementById('activeChatPhone').textContent = data.formattedPhone || ('+' + data.phone);
+          document.getElementById('activeChatPhone').innerHTML = `<bdi dir="ltr" class="clean-phone">${phoneFormatted}</bdi>`;
         } else {
-          document.getElementById('activeChatName').textContent = data.formattedPhone || ('+' + data.phone);
-          document.getElementById('activeChatPhone').textContent = '+' + data.phone;
+          document.getElementById('activeChatName').innerHTML = `<bdi dir="ltr" class="clean-phone">${phoneFormatted}</bdi>`;
+          document.getElementById('activeChatPhone').innerHTML = `<bdi dir="ltr" class="clean-phone">${phoneFormatted}</bdi>`;
         }
 
         const manualBtn = document.getElementById('btnManualMode');
@@ -1207,34 +1368,19 @@
           manualBtn.textContent = '👤 إشراف يدوي';
         }
 
-        // Render Messages Stream (Formatted WhatsApp Bubbles)
-        const container = document.getElementById('messagesContainer');
-        const history = data.history || [];
+        activeChatTotalMessages = data.totalMessages || 0;
+        hasMoreActiveMessages = !!data.hasMoreMessages;
+        activeChatOffset = data.nextOffset || 0;
 
-        if (history.length === 0 && !data.lastMessage) {
-          container.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>لا توجد رسائل سابقة مع هذا الرقم</p></div>';
+        const newMessages = data.history || [];
+        if (isPrepending) {
+          activeChatHistory = newMessages.concat(activeChatHistory);
         } else {
-          container.innerHTML = history.map(h => {
-            const isMe = h.role === 'model' || h.role === 'me';
-            const cls = isMe ? 'me' : 'contact';
-            const label = isMe ? '🤖 نحن (تَلِيد)' : '👤 العميل';
-            const text = h.parts?.[0]?.text || h.text || '';
-            const timeFormatted = h.timestamp ? new Date(h.timestamp).toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit' }) : '';
-            return `
-              <div class="bubble ${cls}">
-                <div>${text.replace(/\n/g, '<br>')}</div>
-                <div class="bubble-meta">
-                  <span>${label}</span>
-                  ${timeFormatted ? `<span>• ${timeFormatted}</span>` : ''}
-                </div>
-              </div>
-            `;
-          }).join('');
-          
-          if (isFirstSelection) {
-            container.scrollTop = container.scrollHeight;
-          }
+          activeChatHistory = newMessages;
         }
+
+        const container = document.getElementById('messagesContainer');
+        renderActiveChatMessages(container, isFirstSelection, isPrepending);
 
         // Action Center & Draft Handling
         const actionCenter = document.getElementById('actionCenter');
@@ -1248,8 +1394,68 @@
           textarea.className = 'draft-textarea';
           document.getElementById('learningAlert').style.display = 'none';
         }
+      } catch(e){
+        console.error('[loadActiveChat error]:', e);
+      }
+    }
 
-      } catch(e){}
+    function renderActiveChatMessages(container, isFirstSelection, isPrepending) {
+      if (activeChatHistory.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="empty-icon">💬</div><p>لا توجد رسائل سابقة مع هذا الرقم</p></div>';
+        return;
+      }
+
+      const prevScrollHeight = container.scrollHeight;
+
+      let topBtnHtml = '';
+      if (hasMoreActiveMessages) {
+        const remaining = Math.max(0, activeChatTotalMessages - activeChatHistory.length);
+        topBtnHtml = `
+          <button id="btnLoadOlderMsgs" class="btn-load-more-messages" onclick="loadOlderMessages()">
+            <span>⬆️ تحميل 10 رسائل سابقة</span>
+            <span style="font-size: 11px; opacity: 0.8;">(${remaining} متبقية)</span>
+          </button>
+        `;
+      }
+
+      const msgsHtml = activeChatHistory.map(h => {
+        const isMe = h.role === 'model' || h.role === 'me';
+        const cls = isMe ? 'me' : 'contact';
+        const label = isMe ? '🤖 نحن (تَلِيد)' : '👤 العميل';
+        const text = h.parts?.[0]?.text || h.text || '';
+        const timeFormatted = h.timestamp ? new Date(h.timestamp).toLocaleTimeString('ar-YE', { hour: '2-digit', minute: '2-digit' }) : '';
+        return `
+          <div class="bubble ${cls}">
+            <div>${escapeHtml(text).replace(/\n/g, '<br>')}</div>
+            <div class="bubble-meta">
+              <span>${label}</span>
+              ${timeFormatted ? `<span>• ${timeFormatted}</span>` : ''}
+              ${isMe ? '<span style="color:#34d399; font-size:11px;">✓✓</span>' : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = topBtnHtml + msgsHtml;
+
+      if (isPrepending) {
+        const newScrollHeight = container.scrollHeight;
+        container.scrollTop = newScrollHeight - prevScrollHeight;
+      } else if (isFirstSelection) {
+        container.scrollTop = container.scrollHeight;
+      }
+    }
+
+    async function loadOlderMessages() {
+      if (isLoadingOlderMessages || !hasMoreActiveMessages || !activePhone) return;
+      isLoadingOlderMessages = true;
+      const btn = document.getElementById('btnLoadOlderMsgs');
+      if (btn) btn.innerHTML = '⏳ جاري تحميل الرسائل...';
+      try {
+        await loadActiveChat(activePhone, false, activeChatOffset, true);
+      } finally {
+        isLoadingOlderMessages = false;
+      }
     }
 
     function handleDraftInput() {

@@ -2126,12 +2126,29 @@ function formatPhoneNumber(phone) {
   if (!phone) return '';
   const clean = String(phone).replace(/[^0-9]/g, '');
   if (clean.startsWith('967') && clean.length === 12) {
-    return `+967 ${clean.slice(3, 5)} ${clean.slice(5, 8)} ${clean.slice(8)}`;
+    return `+967 ${clean.slice(3, 6)} ${clean.slice(6, 9)} ${clean.slice(9)}`;
+  }
+  if (clean.startsWith('968') && clean.length === 11) {
+    return `+968 ${clean.slice(3, 7)} ${clean.slice(7)}`;
+  }
+  if (clean.startsWith('974') && clean.length === 11) {
+    return `+974 ${clean.slice(3, 7)} ${clean.slice(7)}`;
   }
   if (clean.length >= 8) {
     return `+${clean}`;
   }
   return clean;
+}
+
+function isRealPhoneNumber(phone, c) {
+  if (!phone) return false;
+  const clean = String(phone).replace(/[^0-9]/g, '');
+  if (clean === '967770000001') return false; // استبعاد رقم الاختبار الوهمي
+  // استبعاد معرفات الأجهزة الداخلية (@lid) أو الأرقام خارج نطاق الهواتف الحقيقية (9 إلى 13 رقم)
+  if (clean.length > 13 || clean.length < 9) return false;
+  const jid = c?.remoteJid || '';
+  if (jid.endsWith('@lid') || jid.endsWith('@g.us') || jid.endsWith('@broadcast') || jid.endsWith('@newsletter')) return false;
+  return true;
 }
 
 function resolveContactName(phone, storedName) {
@@ -2145,10 +2162,16 @@ function resolveContactName(phone, storedName) {
   return null;
 }
 
-// قائمة المحادثات لـ Copilot
+// قائمة المحادثات لـ Copilot مع التقسيم لصفحات (Pagination) والبحث الشامل
 app.get('/api/copilot/chats', (req, res) => {
-  const list = Object.entries(chatStore)
-    .filter(([phone]) => phone !== '967770000001') // استبعاد رقم الاختبار الوهمي
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 10));
+  const filter = (req.query.filter || 'all').toLowerCase();
+  const q = (req.query.q || '').trim().toLowerCase();
+
+  // تصفية المحادثات الحقيقية الفردية فقط
+  let allList = Object.entries(chatStore)
+    .filter(([phone, c]) => isRealPhoneNumber(phone, c))
     .map(([phone, c]) => {
       const cleanPhone = String(phone).replace(/[^0-9]/g, '');
       const isUnreplied = c.lastMessageFrom === 'contact' && !c.replied && !c.manualMode;
@@ -2174,7 +2197,7 @@ app.get('/api/copilot/chats', (req, res) => {
         name: displayName,
         lastMessage: c.lastMessage || '',
         lastMessageFrom: c.lastMessageFrom || 'contact',
-        lastMessageTimestamp: c.lastMessageTimestamp || Date.now(),
+        lastMessageTimestamp: c.lastMessageTimestamp || 0,
         replyCount: c.replyCount || 0,
         manualMode: !!c.manualMode,
         hasPendingDraft: !!c.pendingDraft,
@@ -2185,21 +2208,75 @@ app.get('/api/copilot/chats', (req, res) => {
       };
     });
 
-  // فرز ذكي: المحادثات التي لديها مسودة أو عميل ينتظر الرد أولاً، ثم حسب آخر رسالة
-  list.sort((a, b) => {
-    const aUrgent = a.hasPendingDraft || a.isUnreplied;
-    const bUrgent = b.hasPendingDraft || b.isUnreplied;
-    if (aUrgent && !bUrgent) return -1;
-    if (!aUrgent && bUrgent) return 1;
-    return (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0);
-  });
+  const urgentCount = allList.filter(c => c.hasPendingDraft || c.isUnreplied).length;
+  const awaitingCount = allList.filter(c => c.status === 'waiting_customer' && !c.hasPendingDraft && !c.isUnreplied && !c.manualMode).length;
+  const totalRealChats = allList.length;
 
-  res.json(list);
+  // البحث الشامل
+  if (q) {
+    allList = allList.filter(c => 
+      c.phone.includes(q) ||
+      c.formattedPhone.toLowerCase().includes(q) ||
+      (c.contactName && c.contactName.toLowerCase().includes(q)) ||
+      (c.lastMessage && c.lastMessage.toLowerCase().includes(q))
+    );
+  }
+
+  // التصفية حسب الأقسام
+  if (filter === 'pending') {
+    allList = allList.filter(c => {
+      const isDismissed = c.dismissedAt && Date.now() < c.dismissedAt;
+      return (c.hasPendingDraft || c.isUnreplied) && !isDismissed;
+    });
+  } else if (filter === 'awaiting_customer') {
+    allList = allList.filter(c => c.status === 'waiting_customer' || (c.lastMessageFrom === 'me' && !c.hasPendingDraft && !c.isUnreplied && !c.manualMode));
+  } else if (filter === 'replied') {
+    allList = allList.filter(c => c.status === 'replied' && !c.hasPendingDraft && !c.isUnreplied);
+  } else if (filter === 'manual') {
+    allList = allList.filter(c => c.manualMode);
+  }
+
+  // الترتيب:
+  // في "pending": الرسائل العاجلة أولاً ثم الأحدث
+  // في غيرها أو "all": حسب وقت آخر رسالة تنازلياً (أحدث المحادثات في الأعلى مثل واتساب ويب)
+  if (filter === 'pending') {
+    allList.sort((a, b) => {
+      const aUrgent = a.hasPendingDraft || a.isUnreplied;
+      const bUrgent = b.hasPendingDraft || b.isUnreplied;
+      if (aUrgent && !bUrgent) return -1;
+      if (!aUrgent && bUrgent) return 1;
+      return (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0);
+    });
+  } else {
+    allList.sort((a, b) => (b.lastMessageTimestamp || 0) - (a.lastMessageTimestamp || 0));
+  }
+
+  // التقطيع والصفحات
+  const total = allList.length;
+  const startIndex = (page - 1) * limit;
+  const paginatedChats = allList.slice(startIndex, startIndex + limit);
+  const hasMore = (startIndex + limit) < total;
+
+  res.json({
+    chats: paginatedChats,
+    total,
+    page,
+    limit,
+    hasMore,
+    stats: {
+      urgentCount,
+      awaitingCount,
+      totalRealChats
+    }
+  });
 });
 
-// جلب تفاصيل محادثة واحدة وسجلها الكامل
+// جلب تفاصيل محادثة واحدة وسجل آخر 10 رسائل مع دعم التمرير للوراء
 app.get('/api/copilot/chat/:phone', (req, res) => {
   const clean = String(req.params.phone).replace(/[^0-9]/g, '');
+  const limit = Math.max(1, Math.min(100, parseInt(req.query.limit) || 10));
+  const offset = Math.max(0, parseInt(req.query.offset) || 0);
+
   const c = chatStore[clean];
   const formattedPhone = formatPhoneNumber(clean);
   const contactName = c ? resolveContactName(clean, c.name) : (contactsMap[clean] || null);
@@ -2212,21 +2289,93 @@ app.get('/api/copilot/chat/:phone', (req, res) => {
       contactName,
       name: displayName,
       history: [],
+      totalMessages: 0,
+      hasMoreMessages: false,
+      nextOffset: 0,
       pendingDraft: null,
       manualMode: false
     });
   }
+
+  const rawHistory = c.history || [];
+  let fullHistory = [...rawHistory];
+  if (fullHistory.length === 0 && c.lastMessage) {
+    fullHistory.push({
+      role: c.lastMessageFrom === 'me' ? 'model' : 'user',
+      parts: [{ text: c.lastMessage }],
+      timestamp: c.lastMessageTimestamp
+    });
+  }
+
+  const totalMessages = fullHistory.length;
+  // أحدث الرسائل مع إمكانية التمرير للوراء
+  const endIdx = Math.max(0, totalMessages - offset);
+  const startIdx = Math.max(0, endIdx - limit);
+  const pagedHistory = fullHistory.slice(startIdx, endIdx);
+  const hasMoreMessages = startIdx > 0;
+  const nextOffset = offset + pagedHistory.length;
+
   res.json({
     phone: clean,
     formattedPhone,
     contactName,
     name: displayName,
-    history: c.history || [],
+    history: pagedHistory,
+    totalMessages,
+    hasMoreMessages,
+    nextOffset,
     pendingDraft: c.pendingDraft || null,
     manualMode: !!c.manualMode,
     replyCount: c.replyCount || 0,
     lastMessageTimestamp: c.lastMessageTimestamp
   });
+});
+
+// فتح أو إنشاء محادثة مباشرة مع أي رقم هاتف
+app.post('/api/copilot/open-chat', async (req, res) => {
+  try {
+    let { phone, name } = req.body;
+    if (!phone) return res.status(400).json({ error: 'phone is required' });
+    let clean = String(phone).replace(/[^0-9]/g, '');
+    if (clean.length === 9 && clean.startsWith('7')) {
+      clean = '967' + clean;
+    }
+    if (clean.length < 9 || clean.length > 13) {
+      return res.status(400).json({ error: 'رقم هاتف غير صالح. يرجى إدخال 9 إلى 13 رقماً.' });
+    }
+
+    if (!chatStore[clean]) {
+      chatStore[clean] = {
+        phone: clean,
+        remoteJid: `${clean}@s.whatsapp.net`,
+        name: name ? name.trim() : (contactsMap[clean] || ''),
+        lastMessage: '',
+        lastMessageFrom: 'contact',
+        lastMessageTimestamp: Date.now(),
+        replied: true,
+        replyCount: 0,
+        manualMode: false,
+        history: []
+      };
+      saveChatStore(clean);
+      syncChatToCloud(clean);
+    }
+
+    const formattedPhone = formatPhoneNumber(clean);
+    const contactName = resolveContactName(clean, chatStore[clean].name);
+    res.json({
+      success: true,
+      chat: {
+        phone: clean,
+        formattedPhone,
+        contactName,
+        name: contactName ? `${contactName} (${formattedPhone})` : formattedPhone,
+        remoteJid: chatStore[clean].remoteJid
+      }
+    });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // إرسال الرد المعتمد بشرياً وتوثيق التعلّم الذاتي
